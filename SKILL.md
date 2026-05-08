@@ -160,19 +160,19 @@ Default flow:
 6. Parent runs `record` for each returned source. The lock file makes parallel record calls safe.
 7. Parent runs `derive`, `extract`, and `finalize`.
 
-**MANDATORY parallelism question for 8–12 sticker runs.** When `slack-stickers` runs with 8 or more stickers, **after the first-result approval and before generating job 2 of N, halt and ask the user explicitly** whether to fan out to 2 subagents or run sequentially. Do not autonomously decide — neither default to fan-out nor fall back to sequential without an explicit answer.
+**MANDATORY parallelism question for 8+ parallel-eligible jobs.** When *any* bundle runs with 8 or more parallel-eligible jobs (e.g. `slack-stickers` with 8+ stickers, or `app-icon-set` with 8+ variants), **after the first-result approval and before generating job 2 of N, halt and ask the user explicitly** whether to fan out to 2 subagents or run sequentially. Do not autonomously decide — neither default to fan-out nor fall back to sequential without an explicit answer.
 
 **Question to ask (verbatim):**
 
 > ```
-> I have N-1 stickers left to generate. For an 8+ pack I need an explicit choice before I continue:
-> - `parallel`   — split across 2 subagents (≈half the wall time; per-image quality independent across stickers)
+> I have N-1 jobs left to generate. For an 8+ run I need an explicit choice before I continue:
+> - `parallel`   — split across 2 subagents (≈half the wall time; per-image quality independent across jobs)
 > - `sequential` — run them one-by-one in this agent
 > ```
 
 Only proceed after the answer. If the user replies `parallel` but subagent spawning is unavailable in this environment, **surface that constraint and ask** whether to (a) run sequentially anyway or (b) pause so they can grant delegated agent permissions and resume. **Do not** announce a constraint and continue sequentially as a fallback — that's the failure mode this gate exists to prevent.
 
-Batching is allowed: for an 8-sticker pack, two subagents × 4 stickers; for 12, two × 6. Per-image quality is independent across stickers, so batching carries no quality cost; the manifest lock guarantees parallel record safety; sequential generation is NOT required for provenance. Smaller multi-job runs (`slack-stickers` <8, `app-icon-set` variants) may run sequentially without flagging.
+Batching is allowed: for an 8-job run, two subagents × 4 jobs; for 12, two × 6. Per-image quality is independent across jobs, so batching carries no quality cost; the manifest lock guarantees parallel record safety; sequential generation is NOT required for provenance. Smaller multi-job runs (any bundle with <8 parallel-eligible jobs) may run sequentially without flagging.
 
 Subagent write boundary: subagents must not edit `imagegen-jobs.json`, copy files into `decoded/`, run `record`, run `derive`, run `extract`, or run `finalize`. This avoids manifest races and keeps provenance checks centralised.
 
