@@ -16,6 +16,10 @@ You author new bundles as JSON profiles plus prompt templates. No engine code ch
 
 `examples/slack-stickers/dev-pack/` ships a real run of the `slack-stickers` bundle using the canonical dev-pack preset: 12 dev-themed Slack stickers (`shipping-it`, `tests-passing`, `merge-conflict`, `ci-failed`, `deploy`, `hotfix`, `retry`, `lgtm`, `wip`, `debug`, `refactor`, `ship`) generated through `$imagegen` and packaged as transparent 128x128 PNGs plus a Slack import README. Open any of them to see what the flat-vector style looks like in practice. The exact `--variant` strings used to produce this output are listed in [Recommended preset: dev-pack](#recommended-preset-dev-pack) below.
 
+`examples/slack-stickers/coffee-shop-reactions/` includes a compact spritesheet preview of a coffee-themed sticker pack:
+
+<img src="examples/slack-stickers/coffee-shop-reactions/spritesheet.webp" alt="Coffee shop reaction sticker spritesheet" width="128">
+
 ## Install
 
 ```bash
