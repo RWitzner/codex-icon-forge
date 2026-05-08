@@ -5,9 +5,9 @@
 # icon-forge
 
 **AI-powered icon and sticker pack pipeline for [Codex][codex-link].**<br/>
-Drop the folder into `~/.codex/skills/`, restart Codex, and invoke `/icon-forge`<br/>
-to build Slack sticker packs, app icon sets, favicons,<br/>
-and other icon-family products end-to-end from a single concept.
+Drop the folder into `~/.codex/skills/` and restart Codex.<br/>
+Slack sticker packs, app icon sets, favicons, and other icon-family<br/>
+products built end-to-end from a single concept.
 
 [![][github-license-shield]][github-license-link]
 [![][python-shield]][python-link]
@@ -87,7 +87,12 @@ cd "${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 python -m pip install -r requirements.txt
 ```
 
-Restart Codex. Invoke `/icon-forge` and ask for a sticker pack or app icon set.
+Restart Codex, then ask for a sticker pack or app icon set:
+
+- **Codex desktop app** - invoke the slash command `/icon-forge` to load the skill explicitly, then describe what you want.
+- **Codex CLI** - just describe what you want in natural language. The agent picks up the skill from its description and drives the pipeline. (No slash command needed; slash commands are a desktop-app feature.)
+
+Either way the underlying engine is identical.
 
 <div align="right">
 
