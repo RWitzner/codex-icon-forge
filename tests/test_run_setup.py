@@ -533,7 +533,9 @@ class DynamicVariantPrepareTests(unittest.TestCase):
             request = json.loads(
                 (run_dir / "request.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(result["request"], str(run_dir / "request.json"))
+            self.assertTrue(
+                Path(result["request"]).samefile(run_dir / "request.json")
+            )
             from engine.request_manifest import LEGACY_REQUEST_FILENAME
 
             self.assertFalse((run_dir / LEGACY_REQUEST_FILENAME).exists())
