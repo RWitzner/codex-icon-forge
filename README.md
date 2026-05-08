@@ -67,24 +67,43 @@ Restart Codex. Invoke `/icon-forge` and ask for a sticker pack or app icon set.
 
 ## Examples
 
+Two real runs of the `slack-stickers` bundle, each generated end-to-end through `$imagegen`. Same engine, different concept.
+
 <table>
-  <tr>
-    <td valign="top" width="50%">
-      <a href="examples/slack-stickers/dev-pack/"><img src="examples/slack-stickers/dev-pack/shipping-it.png" width="120" alt="Dev pack — shipping-it sticker"></a>
-    </td>
-    <td valign="top">
-      <strong><a href="examples/slack-stickers/dev-pack/">dev-pack</a></strong> &mdash; the canonical preset.<br/>
-      12 dev-themed Slack stickers as transparent 128×128 PNGs: <code>shipping-it</code>, <code>tests-passing</code>, <code>merge-conflict</code>, <code>ci-failed</code>, <code>deploy</code>, <code>hotfix</code>, <code>retry</code>, <code>lgtm</code>, <code>wip</code>, <code>debug</code>, <code>refactor</code>, <code>ship</code>.
-    </td>
-  </tr>
-  <tr>
-    <td valign="top">
-      <a href="examples/slack-stickers/coffee-shop-reactions/"><img src="examples/slack-stickers/coffee-shop-reactions/spritesheet.webp" width="120" alt="Coffee shop reactions spritesheet"></a>
-    </td>
-    <td valign="top">
-      <strong><a href="examples/slack-stickers/coffee-shop-reactions/">coffee-shop-reactions</a></strong> &mdash; coffee-themed sticker pack preview as a vertical spritesheet, showing the same engine producing a different visual concept.
-    </td>
-  </tr>
+<tr>
+  <th align="center" width="50%"><a href="examples/slack-stickers/dev-pack/"><code>dev-pack</code></a> &mdash; 12 stickers</th>
+  <th align="center" width="50%"><a href="examples/slack-stickers/coffee-shop-reactions/"><code>coffee-shop-reactions</code></a> &mdash; 8 stickers</th>
+</tr>
+<tr>
+  <td valign="top" align="center">
+    <img src="examples/slack-stickers/dev-pack/shipping-it.png" width="80" alt="shipping-it">
+    <img src="examples/slack-stickers/dev-pack/tests-passing.png" width="80" alt="tests-passing">
+    <img src="examples/slack-stickers/dev-pack/deploy.png" width="80" alt="deploy"><br/>
+    <img src="examples/slack-stickers/dev-pack/merge-conflict.png" width="80" alt="merge-conflict">
+    <img src="examples/slack-stickers/dev-pack/ci-failed.png" width="80" alt="ci-failed">
+    <img src="examples/slack-stickers/dev-pack/hotfix.png" width="80" alt="hotfix"><br/>
+    <img src="examples/slack-stickers/dev-pack/retry.png" width="80" alt="retry">
+    <img src="examples/slack-stickers/dev-pack/lgtm.png" width="80" alt="lgtm">
+    <img src="examples/slack-stickers/dev-pack/debug.png" width="80" alt="debug"><br/>
+    <img src="examples/slack-stickers/dev-pack/wip.png" width="80" alt="wip">
+    <img src="examples/slack-stickers/dev-pack/refactor.png" width="80" alt="refactor">
+    <img src="examples/slack-stickers/dev-pack/ship.png" width="80" alt="ship">
+    <br/><br/>
+    <sub>Dev workflow themes &mdash; shipping, testing, deploying, debugging</sub>
+  </td>
+  <td valign="top" align="center">
+    <img src="examples/slack-stickers/coffee-shop-reactions/first-sip.png" width="80" alt="first-sip">
+    <img src="examples/slack-stickers/coffee-shop-reactions/perfect-pour.png" width="80" alt="perfect-pour"><br/>
+    <img src="examples/slack-stickers/coffee-shop-reactions/too-hot.png" width="80" alt="too-hot">
+    <img src="examples/slack-stickers/coffee-shop-reactions/spill-alert.png" width="80" alt="spill-alert"><br/>
+    <img src="examples/slack-stickers/coffee-shop-reactions/busy-barista.png" width="80" alt="busy-barista">
+    <img src="examples/slack-stickers/coffee-shop-reactions/beans-approved.png" width="80" alt="beans-approved"><br/>
+    <img src="examples/slack-stickers/coffee-shop-reactions/need-caffeine.png" width="80" alt="need-caffeine">
+    <img src="examples/slack-stickers/coffee-shop-reactions/quiet-corner.png" width="80" alt="quiet-corner">
+    <br/><br/>
+    <sub>Coffee shop reactions &mdash; sipping, spilling, brewing, beaning</sub>
+  </td>
+</tr>
 </table>
 
 <div align="right">
