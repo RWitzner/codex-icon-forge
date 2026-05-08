@@ -97,7 +97,9 @@ Restart Codex. Invoke `/icon-forge` and ask for a sticker pack or app icon set.
 
 ## <img src="examples/slack-stickers/coffee-shop-reactions/first-sip.png" width="32" align="absmiddle"> Examples
 
-Two real runs of the `slack-stickers` bundle, each generated end-to-end through `$imagegen`. Same engine, different concept.
+Three real runs through the pipeline, spanning two bundles and two completely different visual languages. Same `prepare → status → record → extract → finalize` flow every time.
+
+### `slack-stickers` &mdash; flat-vector cartoon
 
 <table>
 <tr>
@@ -135,6 +137,40 @@ Two real runs of the `slack-stickers` bundle, each generated end-to-end through 
   </td>
 </tr>
 </table>
+
+### `app-icon-set` &mdash; monoline brand marks
+
+A completely different visual language — single-weight stroke, no fills, charcoal on warm off-white squircle, single teal accent applied to one specific detail per icon. Same pipeline, different `style` profile.
+
+<a href="examples/app-icon-set/monoline-suite/"><code>monoline-suite</code></a> &mdash; 8 distinct app icons × 8 platform sizes (16, 32, 64, 128, 180, 256, 512, 1024) = **64 PNG files**.
+
+<table align="center">
+<tr>
+  <td align="center"><img src="examples/app-icon-set/monoline-suite/calendar/calendar-256.png" width="96" alt="calendar"><br/><sub><code>calendar</code></sub></td>
+  <td align="center"><img src="examples/app-icon-set/monoline-suite/mail/mail-256.png" width="96" alt="mail"><br/><sub><code>mail</code></sub></td>
+  <td align="center"><img src="examples/app-icon-set/monoline-suite/notes/notes-256.png" width="96" alt="notes"><br/><sub><code>notes</code></sub></td>
+  <td align="center"><img src="examples/app-icon-set/monoline-suite/maps/maps-256.png" width="96" alt="maps"><br/><sub><code>maps</code></sub></td>
+  <td align="center"><img src="examples/app-icon-set/monoline-suite/music/music-256.png" width="96" alt="music"><br/><sub><code>music</code></sub></td>
+  <td align="center"><img src="examples/app-icon-set/monoline-suite/camera/camera-256.png" width="96" alt="camera"><br/><sub><code>camera</code></sub></td>
+  <td align="center"><img src="examples/app-icon-set/monoline-suite/wallet/wallet-256.png" width="96" alt="wallet"><br/><sub><code>wallet</code></sub></td>
+  <td align="center"><img src="examples/app-icon-set/monoline-suite/search/search-256.png" width="96" alt="search"><br/><sub><code>search</code></sub></td>
+</tr>
+</table>
+
+<p align="center"><sub>Same family, different motif — accent applied per-icon to one specific element (the circled date, envelope seal, pencil tip, destination star, note head, shutter dot, chip, lens mark).</sub></p>
+
+<p align="center"><strong>One variant across all 8 platform sizes:</strong></p>
+
+<p align="center">
+  <img src="examples/app-icon-set/monoline-suite/calendar/calendar-16.png" alt="16px" valign="bottom">&nbsp;
+  <img src="examples/app-icon-set/monoline-suite/calendar/calendar-32.png" alt="32px" valign="bottom">&nbsp;
+  <img src="examples/app-icon-set/monoline-suite/calendar/calendar-64.png" alt="64px" valign="bottom">&nbsp;
+  <img src="examples/app-icon-set/monoline-suite/calendar/calendar-128.png" alt="128px" valign="bottom">&nbsp;
+  <img src="examples/app-icon-set/monoline-suite/calendar/calendar-180.png" alt="180px" valign="bottom">&nbsp;
+  <img src="examples/app-icon-set/monoline-suite/calendar/calendar-256.png" alt="256px" valign="bottom">
+</p>
+
+<p align="center"><sub>16 · 32 · 64 · 128 · 180 · 256 px (rendered at native pixel dimensions). Sizes 512 and 1024 omitted from this strip; full set lives in the folder.</sub></p>
 
 <div align="right">
 
