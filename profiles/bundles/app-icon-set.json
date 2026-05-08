@@ -1,0 +1,8 @@
+{
+  "id": "app-icon-set",
+  "description": "User-defined family of distinct icon designs (e.g. main + share-extension + watch). Each variant is generated independently in parallel and rendered at 8 platform sizes. For a single icon at 8 sizes, use the simpler `app-icons` bundle instead.",
+  "atlas": "app-icon-set",
+  "style": "launcher-tile",
+  "extractor": "chroma-key-slots",
+  "packager": "app-icon-set-multisize"
+}

@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# icon-forge run artifacts
+output/
+verification-run/
+manual-py-test/
+mode-test/
+tmp-test/
+pytest-cache-files-*/
+*.lock
+
+# imagegen artefacts that may land here during local debugging
+generated_images/
+
+# Agent-local planning notes; keep public docs intentional.
+docs/superpowers/

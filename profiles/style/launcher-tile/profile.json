@@ -1,0 +1,49 @@
+{
+  "id": "launcher-tile",
+  "description": "App launcher tile style: full-colour brand-feel app icon designed to sit on a Home Screen rounded-square tile. Distinct from in-app symbols/glyphs. Hardened against feature-glyph leakage when variant purposes are feature-named. Only `watch` and `notification` variants opt out of the purpose_wrapper (via empty-string overrides) because their state_requirements demand a 1-bit silhouette — a fundamentally different render than the launcher-tile wrapper assumes. All other variant IDs (main, share-ext, light, dark, icon, alternate-N, etc.) receive the default launcher-tile wrapper; light and dark also pick up state_requirements with surface-tinted hints.",
+  "extends": null,
+  "target_kind": "app launcher icon",
+  "templates": {
+    "base": "templates/base-icon.txt",
+    "row_strip": "templates/row-icon.txt"
+  },
+  "prompt_blocks": {
+    "house_style": "App launcher tile style: a complete branded application icon meant to sit on the device Home Screen as a rounded-square tile users tap to open the app. Full-colour palette (no forced monochrome), bold simple iconic shape that fills the canvas and reads as a unified product mark, square-friendly composition, distinctive brand personality. The icon must read at thumbnail size (16x16) and stay strong at 1024x1024. Solid filled shapes with a confident colour palette; subtle one-step shading is fine; flat is fine. Avoid photorealism, gradients heavier than one stop, soft drop shadows, glossy 3D rendering, and text inside the icon.",
+    "user_style_notes_join": " Additional user style notes: {user_style_notes}.",
+    "purpose_wrapper": "an app launcher tile expressing the visual theme of \"{purpose}\" — render this as a full-colour branded Home Screen app tile, NOT as a UI symbol, tab bar glyph, list-row icon, or feature glyph",
+    "purpose_wrapper_overrides": {
+      "watch": "",
+      "notification": ""
+    }
+  },
+  "forbidden_artifacts": [
+    "Do not produce SF Symbols-style monochrome glyphs, tab bar icons, button icons, or list-row icons (except for `watch` and `notification` variants whose state requirements explicitly demand monochrome silhouettes). The output must read as a complete app launcher tile, not as a UI symbol or feature icon.",
+    "Do not draw multiple disconnected motifs; the icon is one unified iconic mark.",
+    "Do not include text, captions, watermarks, signatures, or UI chrome.",
+    "Do not draw scenery, photorealistic shading, soft drop shadows, heavy gradients, or glossy 3D effects.",
+    "Do not use the chroma-key colour or chroma-adjacent colours in the icon, outline, or accents."
+  ],
+  "state_requirements": {
+    "watch": [
+      "This variant is a watchOS launcher icon: render as a 1-bit monochrome silhouette on the chroma-key background. The full-colour-tile rule does NOT apply to this variant — silhouette is required.",
+      "Keep the silhouette simple and recognisable at watch-face scale."
+    ],
+    "notification": [
+      "This variant is a notification icon: render as a single-tone monochrome silhouette on the chroma-key background. The full-colour-tile rule does NOT apply to this variant — silhouette is required."
+    ],
+    "light": [
+      "This variant is the light-mode launcher tile: full colour, designed to sit on light system surfaces."
+    ],
+    "dark": [
+      "This variant is the dark-mode launcher tile: full colour, designed to sit on dark system surfaces."
+    ]
+  },
+  "chroma_key": {
+    "selection": "auto",
+    "candidates": [
+      {"name": "magenta", "hex": "#FF00FF"},
+      {"name": "cyan",    "hex": "#00FFFF"},
+      {"name": "yellow",  "hex": "#FFFF00"}
+    ]
+  }
+}

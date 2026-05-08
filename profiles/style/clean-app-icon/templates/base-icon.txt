@@ -1,0 +1,6 @@
+Create a single canonical reference image for an {target_kind} named {display_name}.
+
+Concept: {entity_notes}.
+Style contract: {style_notes}
+
+Output one centered iconic design on a perfectly flat pure {chroma_key_name} {chroma_key_hex} chroma-key background, sized for a {cell_width}x{cell_height} canvas. The icon must remain readable when scaled down to 16x16 thumbnail size. Do not include text, scenery, logos, or watermarks.

@@ -1,0 +1,16 @@
+{
+  "id": "sticker-folder",
+  "description": "Slack-style sticker output: extracts each atlas cell to a named PNG and writes a README with import instructions. No JSON manifest (Slack has no pack-import format).",
+  "strategy": "atlas-extract-folder",
+  "output_root": "${ICON_FORGE_HOME:-$HOME/icon-forge}/stickers/{entity_id}",
+  "params": {
+    "image_format": "PNG",
+    "sizes": [128, 256, 512, 1024],
+    "source_dir": "decoded",
+    "key_threshold": 96.0,
+    "alpha_erode_px": 1,
+    "alpha_blur_radius": 1.0,
+    "readme_filename": "README.md",
+    "readme_template": "# {display_name} sticker pack\n\n{description}\n\n## Stickers ({sticker_count})\n\nEach sticker has its own folder with PNG exports at these sizes: {size_list}.\n\n{state_list}\n\n## Importing into Slack\n\n1. Open your Slack workspace and click the workspace name -> Tools & settings -> Customize workspace -> Add Custom Emoji.\n2. For each sticker, click *Add Custom Emoji*, upload the size you want, and use the suggested `:name:` shortcut.\n\nSlack does not support bulk emoji import via UI.\n"
+  }
+}

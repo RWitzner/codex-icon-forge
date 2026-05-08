@@ -1,0 +1,9 @@
+{
+  "id": "slot-only",
+  "description": "Equal-width slot extraction with no chroma-key removal. Used by styles where the model emits transparent PNG output directly, or for sticker packs where each frame is the full cell. Disables near-opaque validation since stickers normally fill their cell.",
+  "strategy": "slot-only",
+  "params": {
+    "min_used_pixels": 50,
+    "near_opaque_threshold": 1.01
+  }
+}

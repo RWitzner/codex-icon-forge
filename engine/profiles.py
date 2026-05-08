@@ -1,0 +1,680 @@
+"""Profile loaders for icon-forge.
+
+A run is parameterised by four orthogonal profiles plus a bundle that names
+which profile of each kind to use:
+
+    profiles/atlas/<id>.json
+    profiles/style/<id>/profile.json  (+ templates/*.txt)
+    profiles/extractor/<id>.json
+    profiles/packager/<id>.json
+    profiles/bundles/<id>.json
+
+Loaders here are pure data: they read JSON, validate structure, and return
+frozen-ish dataclasses. No image processing, no CLI, no IO beyond reading
+the profile files themselves.
+
+Zero runtime dependencies beyond the standard library.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from .request_manifest import read_request
+
+PROFILES_ROOT = Path(__file__).resolve().parent.parent / "profiles"
+
+_HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+_VALID_DERIVATION_METHODS = {"horizontal-mirror", "vertical-mirror"}
+_VALID_FALLBACK_STRATEGIES = {"full-generation", "error"}
+
+
+class ProfileError(ValueError):
+    """Raised when a profile file is missing required structure."""
+
+
+# ---------------------------------------------------------------------------
+# Atlas profile
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Geometry:
+    columns: int
+    rows: int
+    cell_width: int
+    cell_height: int
+
+    @property
+    def width(self) -> int:
+        return self.columns * self.cell_width
+
+    @property
+    def height(self) -> int:
+        return self.rows * self.cell_height
+
+
+@dataclass(frozen=True)
+class StateSpec:
+    id: str
+    row: int
+    frames: int
+    durations_ms: tuple[int, ...]
+    purpose: str
+    is_reduced_motion_first_frame: bool = False
+
+
+@dataclass(frozen=True)
+class Derivation:
+    target: str
+    source: str
+    method: str
+    requires_explicit_approval: bool
+    fallback_strategy: str
+
+
+@dataclass(frozen=True)
+class LayoutGuides:
+    enabled: bool
+    safe_margin_x: int
+    safe_margin_y: int
+    guide_style: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class DynamicStatesConfig:
+    """Bounded opt-in capability: states are supplied at prepare time.
+
+    When ``enabled`` is True, the atlas template ships with empty states and
+    geometry.rows is materialised from the variant count later. Only bundles
+    that explicitly declare this block can use dynamic states; everything
+    else stays static.
+    """
+
+    enabled: bool
+    source: str = "prepare_variants"
+    max_states: int = 12
+
+
+_VARIANT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
+_VARIANT_PURPOSE_MAX_LEN = 200
+
+
+@dataclass(frozen=True)
+class VariantSpec:
+    """User-supplied state for a dynamic atlas.
+
+    ``id`` is a slug used as the state id and as the per-variant subfolder
+    name in packager output. ``purpose`` is the one-sentence description
+    the prompt template will use for that variant.
+    """
+
+    id: str
+    purpose: str
+
+
+@dataclass(frozen=True)
+class AtlasProfile:
+    id: str
+    description: str
+    geometry: Geometry
+    states: tuple[StateSpec, ...]
+    derivations: tuple[Derivation, ...]
+    layout_guides: LayoutGuides
+    requires_base: bool = True
+    dynamic_states: DynamicStatesConfig | None = None
+
+    def state(self, state_id: str) -> StateSpec:
+        for state in self.states:
+            if state.id == state_id:
+                return state
+        raise KeyError(state_id)
+
+    @property
+    def state_ids(self) -> tuple[str, ...]:
+        return tuple(state.id for state in self.states)
+
+    def derivation_for(self, target_id: str) -> Derivation | None:
+        for derivation in self.derivations:
+            if derivation.target == target_id:
+                return derivation
+        return None
+
+    @property
+    def is_dynamic(self) -> bool:
+        return self.dynamic_states is not None and self.dynamic_states.enabled
+
+
+def materialize_dynamic_atlas(
+    atlas: AtlasProfile, variants: list[VariantSpec]
+) -> AtlasProfile:
+    """Materialise a dynamic atlas template into a concrete one.
+
+    Validates the variant list, then returns a NEW frozen AtlasProfile with
+    geometry.rows = len(variants), one StateSpec per variant in order, and
+    each state.row equal to its index. Columns and cell dimensions are
+    preserved from the template.
+    """
+
+    if not atlas.is_dynamic:
+        raise ProfileError(
+            f"atlas {atlas.id!r} is not dynamic; cannot materialise variants"
+        )
+    config = atlas.dynamic_states
+    assert config is not None  # narrowed by is_dynamic
+
+    if not variants:
+        raise ProfileError(
+            f"atlas {atlas.id!r} requires at least one variant; pass --variant id:purpose"
+        )
+    if len(variants) > config.max_states:
+        raise ProfileError(
+            f"atlas {atlas.id!r} accepts at most {config.max_states} variants, "
+            f"got {len(variants)}"
+        )
+
+    seen: set[str] = set()
+    states: list[StateSpec] = []
+    for index, variant in enumerate(variants):
+        if not isinstance(variant.id, str) or not _VARIANT_ID_PATTERN.match(variant.id):
+            raise ProfileError(
+                f"variant id {variant.id!r} is invalid; must match "
+                "[a-z0-9][a-z0-9-]{0,30}"
+            )
+        if variant.id in seen:
+            raise ProfileError(f"duplicate variant id {variant.id!r}")
+        seen.add(variant.id)
+        purpose = (variant.purpose or "").strip()
+        if not purpose:
+            raise ProfileError(f"variant {variant.id!r} has empty purpose")
+        if len(purpose) > _VARIANT_PURPOSE_MAX_LEN:
+            raise ProfileError(
+                f"variant {variant.id!r} purpose exceeds {_VARIANT_PURPOSE_MAX_LEN} chars"
+            )
+        states.append(
+            StateSpec(
+                id=variant.id,
+                row=index,
+                frames=1,
+                durations_ms=(0,),
+                purpose=purpose,
+            )
+        )
+
+    new_geometry = Geometry(
+        columns=atlas.geometry.columns,
+        rows=len(states),
+        cell_width=atlas.geometry.cell_width,
+        cell_height=atlas.geometry.cell_height,
+    )
+    return AtlasProfile(
+        id=atlas.id,
+        description=atlas.description,
+        geometry=new_geometry,
+        states=tuple(states),
+        derivations=atlas.derivations,
+        layout_guides=atlas.layout_guides,
+        requires_base=atlas.requires_base,
+        dynamic_states=atlas.dynamic_states,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Style profile
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ChromaKeyCandidate:
+    name: str
+    hex: str
+
+
+@dataclass(frozen=True)
+class ChromaKeyConfig:
+    selection: str
+    candidates: tuple[ChromaKeyCandidate, ...]
+
+
+@dataclass(frozen=True)
+class StyleProfile:
+    id: str
+    description: str
+    target_kind: str
+    house_style: str
+    user_style_notes_join: str
+    base_template: str
+    row_strip_template: str
+    forbidden_artifacts: tuple[str, ...]
+    state_requirements: dict[str, tuple[str, ...]]
+    chroma_key: ChromaKeyConfig
+    extends: str | None = None
+    purpose_wrapper: str = ""
+    purpose_wrapper_overrides: dict[str, str] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Extractor profile
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExtractorProfile:
+    id: str
+    description: str
+    strategy: str
+    params: dict[str, Any]
+
+
+# ---------------------------------------------------------------------------
+# Packager profile
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FileMapping:
+    source: str
+    target: str
+
+
+@dataclass(frozen=True)
+class ManifestWriter:
+    kind: str
+    filename: str
+    schema: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class PackagerProfile:
+    id: str
+    description: str
+    output_root: str
+    strategy: str = "files-and-manifest"
+    files: tuple[FileMapping, ...] = ()
+    manifest_writer: ManifestWriter | None = None
+    params: dict[str, Any] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Bundle
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Bundle:
+    id: str
+    description: str
+    atlas: AtlasProfile
+    style: StyleProfile
+    extractor: ExtractorProfile
+    packager: PackagerProfile
+
+
+# ---------------------------------------------------------------------------
+# Loaders
+# ---------------------------------------------------------------------------
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        raise ProfileError(f"profile file not found: {path}")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ProfileError(f"invalid JSON in {path}: {exc}") from exc
+
+
+def _require(data: dict[str, Any], key: str, context: str) -> Any:
+    if key not in data:
+        raise ProfileError(f"{context}: missing required key '{key}'")
+    return data[key]
+
+
+def _require_hex(value: str, context: str) -> str:
+    if not isinstance(value, str) or not _HEX_COLOR.match(value):
+        raise ProfileError(f"{context}: expected #RRGGBB hex color, got {value!r}")
+    return "#" + value[1:].upper()
+
+
+def load_atlas_profile(profile_id: str, root: Path = PROFILES_ROOT) -> AtlasProfile:
+    path = root / "atlas" / f"{profile_id}.json"
+    data = _read_json(path)
+    context = f"atlas profile {profile_id}"
+
+    geometry_data = _require(data, "geometry", context)
+    geometry = Geometry(
+        columns=int(_require(geometry_data, "columns", f"{context}.geometry")),
+        rows=int(_require(geometry_data, "rows", f"{context}.geometry")),
+        cell_width=int(_require(geometry_data, "cell_width", f"{context}.geometry")),
+        cell_height=int(_require(geometry_data, "cell_height", f"{context}.geometry")),
+    )
+
+    dynamic_states_data = data.get("dynamic_states") or None
+    dynamic_states: DynamicStatesConfig | None = None
+    if dynamic_states_data is not None:
+        if not isinstance(dynamic_states_data, dict):
+            raise ProfileError(f"{context}.dynamic_states must be an object")
+        dynamic_states = DynamicStatesConfig(
+            enabled=bool(dynamic_states_data.get("enabled", False)),
+            source=str(dynamic_states_data.get("source", "prepare_variants")),
+            max_states=int(dynamic_states_data.get("max_states", 12)),
+        )
+        if dynamic_states.max_states < 1:
+            raise ProfileError(
+                f"{context}.dynamic_states.max_states must be >= 1"
+            )
+
+    states_data = data.get("states", [])
+    is_dynamic_template = dynamic_states is not None and dynamic_states.enabled
+    if not isinstance(states_data, list):
+        raise ProfileError(f"{context}: 'states' must be a list")
+    if not states_data and not is_dynamic_template:
+        raise ProfileError(f"{context}: 'states' must be a non-empty list")
+    if states_data and is_dynamic_template:
+        raise ProfileError(
+            f"{context}: dynamic atlases must not pre-declare 'states'; "
+            "they are materialised from prepare-time variants"
+        )
+
+    states: list[StateSpec] = []
+    seen_ids: set[str] = set()
+    seen_rows: set[int] = set()
+    for index, state in enumerate(states_data):
+        state_context = f"{context}.states[{index}]"
+        state_id = str(_require(state, "id", state_context))
+        if state_id in seen_ids:
+            raise ProfileError(f"{state_context}: duplicate state id {state_id!r}")
+        row = int(_require(state, "row", state_context))
+        if row in seen_rows:
+            raise ProfileError(f"{state_context}: duplicate row {row}")
+        if not (0 <= row < geometry.rows):
+            raise ProfileError(
+                f"{state_context}: row {row} outside geometry ({geometry.rows} rows)"
+            )
+        frames = int(_require(state, "frames", state_context))
+        if not (1 <= frames <= geometry.columns):
+            raise ProfileError(
+                f"{state_context}: frames {frames} outside [1, {geometry.columns}]"
+            )
+        durations = tuple(int(value) for value in _require(state, "durations_ms", state_context))
+        if len(durations) != frames:
+            raise ProfileError(
+                f"{state_context}: durations_ms has {len(durations)} entries but frames={frames}"
+            )
+        states.append(
+            StateSpec(
+                id=state_id,
+                row=row,
+                frames=frames,
+                durations_ms=durations,
+                purpose=str(_require(state, "purpose", state_context)),
+                is_reduced_motion_first_frame=bool(
+                    state.get("is_reduced_motion_first_frame", False)
+                ),
+            )
+        )
+        seen_ids.add(state_id)
+        seen_rows.add(row)
+
+    derivations_data = data.get("derivations", []) or []
+    derivations: list[Derivation] = []
+    for index, derivation in enumerate(derivations_data):
+        derivation_context = f"{context}.derivations[{index}]"
+        target = str(_require(derivation, "target", derivation_context))
+        source = str(_require(derivation, "source", derivation_context))
+        if target not in seen_ids:
+            raise ProfileError(f"{derivation_context}: target {target!r} is not a known state")
+        if source not in seen_ids:
+            raise ProfileError(f"{derivation_context}: source {source!r} is not a known state")
+        method = str(_require(derivation, "method", derivation_context))
+        if method not in _VALID_DERIVATION_METHODS:
+            raise ProfileError(
+                f"{derivation_context}: method {method!r} not in {_VALID_DERIVATION_METHODS}"
+            )
+        fallback_strategy = str(derivation.get("fallback_strategy", "full-generation"))
+        if fallback_strategy not in _VALID_FALLBACK_STRATEGIES:
+            raise ProfileError(
+                f"{derivation_context}: fallback_strategy {fallback_strategy!r} "
+                f"not in {_VALID_FALLBACK_STRATEGIES}"
+            )
+        derivations.append(
+            Derivation(
+                target=target,
+                source=source,
+                method=method,
+                requires_explicit_approval=bool(
+                    derivation.get("requires_explicit_approval", True)
+                ),
+                fallback_strategy=fallback_strategy,
+            )
+        )
+
+    layout_guides_data = data.get("layout_guides") or {}
+    layout_guides = LayoutGuides(
+        enabled=bool(layout_guides_data.get("enabled", False)),
+        safe_margin_x=int(layout_guides_data.get("safe_margin_x", 0)),
+        safe_margin_y=int(layout_guides_data.get("safe_margin_y", 0)),
+        guide_style=dict(layout_guides_data.get("guide_style", {})),
+    )
+
+    return AtlasProfile(
+        id=str(_require(data, "id", context)),
+        description=str(data.get("description", "")),
+        geometry=geometry,
+        states=tuple(states),
+        derivations=tuple(derivations),
+        layout_guides=layout_guides,
+        requires_base=bool(data.get("requires_base", True)),
+        dynamic_states=dynamic_states,
+    )
+
+
+def load_style_profile(profile_id: str, root: Path = PROFILES_ROOT) -> StyleProfile:
+    style_dir = root / "style" / profile_id
+    path = style_dir / "profile.json"
+    data = _read_json(path)
+    context = f"style profile {profile_id}"
+
+    templates_data = _require(data, "templates", context)
+    base_template_rel = str(_require(templates_data, "base", f"{context}.templates"))
+    row_template_rel = str(_require(templates_data, "row_strip", f"{context}.templates"))
+    base_template_path = (style_dir / base_template_rel).resolve()
+    row_template_path = (style_dir / row_template_rel).resolve()
+    if not base_template_path.is_file():
+        raise ProfileError(f"{context}: base template not found: {base_template_path}")
+    if not row_template_path.is_file():
+        raise ProfileError(f"{context}: row_strip template not found: {row_template_path}")
+    base_template = base_template_path.read_text(encoding="utf-8")
+    row_template = row_template_path.read_text(encoding="utf-8")
+
+    blocks = _require(data, "prompt_blocks", context)
+    house_style = str(_require(blocks, "house_style", f"{context}.prompt_blocks"))
+    user_join = str(blocks.get("user_style_notes_join", " {user_style_notes}"))
+
+    purpose_wrapper = str(blocks.get("purpose_wrapper", ""))
+
+    overrides_raw = blocks.get("purpose_wrapper_overrides", {})
+    if not isinstance(overrides_raw, dict):
+        raise ProfileError(
+            f"{context}.prompt_blocks.purpose_wrapper_overrides must be an object"
+        )
+    purpose_wrapper_overrides: dict[str, str] = {
+        str(state_id): str(wrapper) for state_id, wrapper in overrides_raw.items()
+    }
+
+    def _probe_wrapper(wrapper: str, where: str) -> None:
+        if not wrapper:
+            return
+        try:
+            wrapper.format(purpose="probe")
+        except (KeyError, IndexError, ValueError) as exc:
+            raise ProfileError(
+                f"{where}: malformed format string ({exc}); only the {{purpose}} "
+                "placeholder is supported"
+            ) from exc
+
+    _probe_wrapper(purpose_wrapper, f"{context}.prompt_blocks.purpose_wrapper")
+    for state_id, wrapper in purpose_wrapper_overrides.items():
+        _probe_wrapper(
+            wrapper,
+            f"{context}.prompt_blocks.purpose_wrapper_overrides[{state_id!r}]",
+        )
+
+    forbidden = tuple(str(item) for item in data.get("forbidden_artifacts", []))
+
+    state_requirements_raw = data.get("state_requirements", {}) or {}
+    state_requirements: dict[str, tuple[str, ...]] = {}
+    for state_id, requirements in state_requirements_raw.items():
+        if not isinstance(requirements, list):
+            raise ProfileError(
+                f"{context}.state_requirements[{state_id!r}]: expected list of strings"
+            )
+        state_requirements[str(state_id)] = tuple(str(item) for item in requirements)
+
+    chroma_data = _require(data, "chroma_key", context)
+    candidates_data = _require(chroma_data, "candidates", f"{context}.chroma_key")
+    if not isinstance(candidates_data, list) or not candidates_data:
+        raise ProfileError(f"{context}.chroma_key.candidates must be a non-empty list")
+    candidates: list[ChromaKeyCandidate] = []
+    for index, candidate in enumerate(candidates_data):
+        candidate_context = f"{context}.chroma_key.candidates[{index}]"
+        candidates.append(
+            ChromaKeyCandidate(
+                name=str(_require(candidate, "name", candidate_context)),
+                hex=_require_hex(str(_require(candidate, "hex", candidate_context)), candidate_context),
+            )
+        )
+    chroma_key = ChromaKeyConfig(
+        selection=str(chroma_data.get("selection", "auto")),
+        candidates=tuple(candidates),
+    )
+
+    return StyleProfile(
+        id=str(_require(data, "id", context)),
+        description=str(data.get("description", "")),
+        target_kind=str(_require(data, "target_kind", context)),
+        house_style=house_style,
+        user_style_notes_join=user_join,
+        base_template=base_template,
+        row_strip_template=row_template,
+        forbidden_artifacts=forbidden,
+        state_requirements=state_requirements,
+        chroma_key=chroma_key,
+        extends=data.get("extends") or None,
+        purpose_wrapper=purpose_wrapper,
+        purpose_wrapper_overrides=purpose_wrapper_overrides,
+    )
+
+
+def load_extractor_profile(
+    profile_id: str, root: Path = PROFILES_ROOT
+) -> ExtractorProfile:
+    path = root / "extractor" / f"{profile_id}.json"
+    data = _read_json(path)
+    context = f"extractor profile {profile_id}"
+    return ExtractorProfile(
+        id=str(_require(data, "id", context)),
+        description=str(data.get("description", "")),
+        strategy=str(_require(data, "strategy", context)),
+        params=dict(data.get("params", {})),
+    )
+
+
+def load_packager_profile(
+    profile_id: str, root: Path = PROFILES_ROOT
+) -> PackagerProfile:
+    path = root / "packager" / f"{profile_id}.json"
+    data = _read_json(path)
+    context = f"packager profile {profile_id}"
+
+    strategy = str(data.get("strategy", "files-and-manifest"))
+
+    files_data = data.get("files", []) or []
+    files: list[FileMapping] = []
+    for index, mapping in enumerate(files_data):
+        mapping_context = f"{context}.files[{index}]"
+        files.append(
+            FileMapping(
+                source=str(_require(mapping, "source", mapping_context)),
+                target=str(_require(mapping, "target", mapping_context)),
+            )
+        )
+
+    manifest_data = data.get("manifest_writer")
+    manifest_writer: ManifestWriter | None = None
+    if manifest_data is not None:
+        manifest_context = f"{context}.manifest_writer"
+        manifest_writer = ManifestWriter(
+            kind=str(_require(manifest_data, "kind", manifest_context)),
+            filename=str(_require(manifest_data, "filename", manifest_context)),
+            schema=dict(_require(manifest_data, "schema", manifest_context)),
+        )
+
+    if strategy == "files-and-manifest":
+        if not files:
+            raise ProfileError(
+                f"{context}: 'files-and-manifest' strategy requires non-empty 'files'"
+            )
+        if manifest_writer is None:
+            raise ProfileError(
+                f"{context}: 'files-and-manifest' strategy requires 'manifest_writer'"
+            )
+
+    return PackagerProfile(
+        id=str(_require(data, "id", context)),
+        description=str(data.get("description", "")),
+        output_root=str(_require(data, "output_root", context)),
+        strategy=strategy,
+        files=tuple(files),
+        manifest_writer=manifest_writer,
+        params=dict(data.get("params", {})),
+    )
+
+
+def load_bundle(profile_id: str, root: Path = PROFILES_ROOT) -> Bundle:
+    path = root / "bundles" / f"{profile_id}.json"
+    data = _read_json(path)
+    context = f"bundle {profile_id}"
+    return Bundle(
+        id=str(_require(data, "id", context)),
+        description=str(data.get("description", "")),
+        atlas=load_atlas_profile(str(_require(data, "atlas", context)), root),
+        style=load_style_profile(str(_require(data, "style", context)), root),
+        extractor=load_extractor_profile(str(_require(data, "extractor", context)), root),
+        packager=load_packager_profile(str(_require(data, "packager", context)), root),
+    )
+
+
+def load_bundle_for_run(
+    run_dir: Path, root: Path = PROFILES_ROOT
+) -> Bundle:
+    """Reload a bundle for a prepared run, re-materialising dynamic atlases.
+
+    Downstream commands (extract, finalize) need the same materialised atlas
+    that ``prepare_run`` produced. The variants are persisted in the request
+    manifest; this helper reads them back and reapplies materialisation.
+    Static atlases are returned unchanged.
+    """
+
+    request = read_request(run_dir)
+    bundle = load_bundle(str(request["bundle"]), root=root)
+    if not bundle.atlas.is_dynamic:
+        return bundle
+    raw_variants = request.get("variants") or []
+    variants = [
+        VariantSpec(id=str(item["id"]), purpose=str(item["purpose"]))
+        for item in raw_variants
+    ]
+    materialised = materialize_dynamic_atlas(bundle.atlas, variants)
+    return Bundle(
+        id=bundle.id,
+        description=bundle.description,
+        atlas=materialised,
+        style=bundle.style,
+        extractor=bundle.extractor,
+        packager=bundle.packager,
+    )

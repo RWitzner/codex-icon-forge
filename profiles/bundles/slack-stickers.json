@@ -1,0 +1,8 @@
+{
+  "id": "slack-stickers",
+  "description": "User-defined Slack sticker pack: 1-12 flat-vector stickers supplied via --variant id:purpose. Generates each sticker on a chroma-key background, ships them as transparent 128x128 PNGs plus a Slack import README. The canonical dev-pack preset (shipping-it, tests-passing, etc.) is documented in README.md.",
+  "atlas": "slack-stickers",
+  "style": "flat-vector",
+  "extractor": "chroma-key-slots",
+  "packager": "sticker-folder"
+}

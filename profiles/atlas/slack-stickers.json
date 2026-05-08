@@ -1,0 +1,24 @@
+{
+  "id": "slack-stickers",
+  "description": "User-defined Slack sticker pack: 1-12 independent flat-vector stickers in 128x128 cells. Variants are supplied at prepare time via --variant id:purpose; each becomes one independent sticker. The canonical dev-pack preset is documented in README.md.",
+  "requires_base": false,
+  "geometry": {
+    "columns": 1,
+    "rows": 1,
+    "cell_width": 128,
+    "cell_height": 128
+  },
+  "states": [],
+  "derivations": [],
+  "layout_guides": {
+    "enabled": false,
+    "safe_margin_x": 0,
+    "safe_margin_y": 0,
+    "guide_style": {}
+  },
+  "dynamic_states": {
+    "enabled": true,
+    "source": "prepare_variants",
+    "max_states": 12
+  }
+}

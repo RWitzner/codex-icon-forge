@@ -1,0 +1,8 @@
+{
+  "id": "app-icons",
+  "description": "Cross-platform app icon pack. One design rendered at 8 platform sizes (16, 32, 64, 128, 180, 256, 512, 1024) with usage notes in README.",
+  "atlas": "app-icons",
+  "style": "launcher-tile",
+  "extractor": "chroma-key-slots",
+  "packager": "app-icons-multisize"
+}

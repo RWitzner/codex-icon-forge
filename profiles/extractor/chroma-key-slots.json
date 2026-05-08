@@ -1,0 +1,12 @@
+{
+  "id": "chroma-key-slots",
+  "description": "Chroma-key removal followed by equal-width slot extraction. Used by sticker-pack-style bundles where each cell is one whole illustration with potentially-disconnected sub-shapes (preserved as one frame). Alpha-only erode + Gaussian blur cleans up anti-aliased halo pixels at the silhouette edge without touching RGB.",
+  "strategy": "chroma-key-slots",
+  "params": {
+    "key_threshold": 96.0,
+    "min_used_pixels": 50,
+    "near_opaque_threshold": 1.01,
+    "alpha_erode_px": 1,
+    "alpha_blur_radius": 1.0
+  }
+}

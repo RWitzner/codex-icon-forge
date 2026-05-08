@@ -1,0 +1,29 @@
+{
+  "id": "flat-vector",
+  "description": "Flat vector sticker style for Slack-style emoji packs: bold simple shapes, limited palette, transparent background, no animation language.",
+  "extends": null,
+  "target_kind": "Slack-pack sticker",
+  "templates": {
+    "base": "templates/base-sticker.txt",
+    "row_strip": "templates/row-sticker.txt"
+  },
+  "prompt_blocks": {
+    "house_style": "Flat vector sticker style: bold simple shapes, thick consistent outlines, limited 4-6 colour palette, flat fills with at most one shadow step, transparent background, square aspect ratio, no gradients, no photorealism, no fine detail that disappears at 128x128. Readable as a single emoji-sized icon.",
+    "user_style_notes_join": " Additional user style notes: {user_style_notes}."
+  },
+  "forbidden_artifacts": [
+    "Sticker must read as a single iconic shape; do not draw multiple disconnected motifs in one cell.",
+    "Do not include text, captions, watermarks, frame numbers, signatures, or UI chrome.",
+    "Do not draw scenery, backgrounds, gradients, photorealistic shading, or soft transparency.",
+    "Do not use the chroma-key colour or chroma-adjacent colours in the sticker, outline, or shadow."
+  ],
+  "state_requirements": {},
+  "chroma_key": {
+    "selection": "auto",
+    "candidates": [
+      {"name": "magenta", "hex": "#FF00FF"},
+      {"name": "cyan",    "hex": "#00FFFF"},
+      {"name": "yellow",  "hex": "#FFFF00"}
+    ]
+  }
+}

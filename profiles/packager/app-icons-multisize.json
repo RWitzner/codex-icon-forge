@@ -1,0 +1,13 @@
+{
+  "id": "app-icons-multisize",
+  "description": "App icon distribution: writes the same icon design at multiple platform sizes plus a README documenting what to use each size for.",
+  "strategy": "multi-size-folder",
+  "output_root": "${ICON_FORGE_HOME:-$HOME/icon-forge}/app-icons/{entity_id}",
+  "params": {
+    "image_format": "PNG",
+    "sizes": [16, 32, 64, 128, 180, 256, 512, 1024],
+    "naming": "{entity_id}-{size}.png",
+    "readme_filename": "README.md",
+    "readme_template": "# {display_name} app icon pack\n\n{description}\n\n## Files ({file_count})\n\nThis pack contains the same design at the following sizes: {size_list}.\n\n## Recommended use\n\n- iOS / iPadOS App Store: use the 1024x1024 file in App Store Connect.\n- macOS .icns generators: feed in the 16, 32, 64, 128, 256, 512, 1024 sizes.\n- Android Play Store: use the 512x512 file.\n- Android launcher icon: use 192x192 (xxxhdpi) — closest in this pack is 256.\n- Web favicon: use 32x32 for the standard favicon, 180x180 for apple-touch-icon.\n- Slack / Discord workspace icon: use the 512x512 file.\n\nAll files are PNG with transparent backgrounds.\n"
+  }
+}

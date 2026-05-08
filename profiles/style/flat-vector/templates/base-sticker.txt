@@ -1,0 +1,6 @@
+Create a single canonical reference image for a {target_kind} pack named {display_name}.
+
+Pack: {entity_notes}.
+Style contract: {style_notes}
+
+Output one centered iconic shape on a perfectly flat pure {chroma_key_name} {chroma_key_hex} chroma-key background, suitable for splitting into a {cell_width}x{cell_height} sticker cell. Keep the silhouette readable at thumbnail size. Do not include text, scenery, or detached effects.

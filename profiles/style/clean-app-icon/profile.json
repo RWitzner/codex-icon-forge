@@ -1,0 +1,29 @@
+{
+  "id": "clean-app-icon",
+  "description": "Modern app icon style: bold simple silhouette, square-friendly, transparent-ready, readable from 16x16 up to 1024x1024.",
+  "extends": null,
+  "target_kind": "application icon",
+  "templates": {
+    "base": "templates/base-icon.txt",
+    "row_strip": "templates/row-icon.txt"
+  },
+  "prompt_blocks": {
+    "house_style": "Modern app icon style: bold simple iconic silhouette, square-friendly composition centered in the canvas, thick consistent outlines or solid filled shapes, limited 3-6 colour palette, flat or subtle one-step shading, no fine detail that disappears at 16x16. The icon must read at thumbnail size and at 1024x1024 alike. Avoid photorealism, gradients, soft shadows, glossy 3D rendering, or text inside the icon.",
+    "user_style_notes_join": " Additional user style notes: {user_style_notes}."
+  },
+  "forbidden_artifacts": [
+    "Icon must read as a single iconic shape; do not draw multiple disconnected motifs.",
+    "Do not include text, captions, watermarks, logos, signatures, or UI chrome.",
+    "Do not draw scenery, backgrounds, photorealistic shading, soft drop shadows, gradients, or glossy 3D effects.",
+    "Do not use the chroma-key colour or chroma-adjacent colours in the icon, outline, or accents."
+  ],
+  "state_requirements": {},
+  "chroma_key": {
+    "selection": "auto",
+    "candidates": [
+      {"name": "magenta", "hex": "#FF00FF"},
+      {"name": "cyan",    "hex": "#00FFFF"},
+      {"name": "yellow",  "hex": "#FFFF00"}
+    ]
+  }
+}
