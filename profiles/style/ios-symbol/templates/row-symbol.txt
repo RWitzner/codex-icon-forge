@@ -1,0 +1,10 @@
+Create the {target_kind} for the `{entity_id}` design.
+
+This symbol is `{state}` - concept: {purpose}.
+Description: {entity_notes}.
+Style contract: {style_notes}
+
+Output one centered monochrome transparent UI glyph on a perfectly flat pure {chroma_key_name} {chroma_key_hex} chroma-key background, sized for a {cell_width}x{cell_height} canvas. The glyph must read clearly at 24x24, keep simple SF Symbols-style proportions, and work as a template image that can be tinted by the app. Render the concept as a single iconic silhouette or simple stroked mark, not as an app launcher tile, not as a full-colour illustration, and not inside a rounded-square background.{state_requirement_text}
+
+Forbidden artifacts:
+{transparency_artifact_text}

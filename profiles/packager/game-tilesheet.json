@@ -1,0 +1,12 @@
+{
+  "id": "game-tilesheet",
+  "description": "Static game tile package: compact PNG tilesheet, individual 256x256 tile PNGs, JSON manifest, and README.",
+  "strategy": "tile-sheet-folder",
+  "output_root": "${ICON_FORGE_HOME:-$HOME/icon-forge}/game-tiles/{entity_id}",
+  "params": {
+    "tile_size": 256,
+    "image_format": "PNG",
+    "readme_filename": "README.md",
+    "readme_template": "# {display_name} game tile sheet\n\n{description}\n\n## Output\n\n- `tilesheet.png` - compact row-major sheet, {columns} columns x {rows} rows, {tile_size}x{tile_size} tiles\n- `tiles/<tile-id>.png` - individual full-size tile PNGs\n- `manifest.json` - tile coordinates and metadata\n\n## Tiles ({tile_count})\n\n{tile_list}\n"
+  }
+}

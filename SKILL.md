@@ -1,6 +1,6 @@
 ---
 name: icon-forge
-description: Generate icon packs and sticker packs for Slack, Discord, app stores, web favicons, and social platforms. AI image generation drives concept-to-packaged-output through configurable bundle profiles. Each bundle names an atlas geometry, a visual style, an extractor strategy, and a packager. Ships with slack-stickers (1-12 user-defined transparent emoji-sized stickers with import README; canonical dev-pack preset documented), app-icons (one design rendered at 8 platform sizes from 16x16 up to 1024x1024), and app-icon-set (1-12 distinct icon designs each at all 8 sizes). End-to-end CLI subcommands prepare, status, record, derive, extract, and finalize drive a run from concept to final files. Subagent fan-out supports parallel sticker generation while the parent agent owns recording and packaging. Use when building icon assets or sticker packs that need consistent visual style across multiple outputs.
+description: Generate icon packs, sticker packs, static game tile sheets, and iOS in-app symbol PNG fallbacks through configurable bundle profiles. Use for slack-stickers, app-icons, app-icon-set, ios-button-icons, and game-tiles.
 ---
 
 # Icon Forge
@@ -20,6 +20,8 @@ AI-powered icon and sticker pack pipeline. Same generation engine, multiple entr
 - **`slack-stickers`** — user-defined 1–12 sticker pack, each sticker rendered in a 128x128 cell. Variants are supplied at prepare time via `--variant id:purpose` (one per sticker). Output: one transparent PNG per variant plus a `README.md` with Slack import instructions. Style is `flat-vector` (bold simple shapes, thick outlines, limited palette). The canonical dev-pack preset (`shipping-it`, `tests-passing`, `merge-conflict`, …) lives in README.md as 12 ready-to-paste `--variant` strings.
 - **`app-icons`** — one icon design rendered at 8 platform sizes (16, 32, 64, 128, 180, 256, 512, 1024). Output: 8 sized PNGs plus a README mapping each size to its platform use (iOS App Store, Android Play Store, web favicon, apple-touch-icon, Slack workspace icon). Style is `launcher-tile` (full-colour app launcher tile, hardened against feature-glyph leakage, readable from 16x16).
 - **`app-icon-set`** — user-defined family of 1–12 distinct icon designs (e.g. main + share-extension + watch + notification), each rendered at all 8 platform sizes. Variants are supplied at prepare time via `--variant id:purpose`; each variant is generated independently by its own subagent, then fan'ed out to subfolders. Output: `<entity>/<variant>/<variant>-<size>.png` plus a family README.
+- **`ios-button-icons`** - user-defined family of 1-12 iOS in-app symbols (tab bar, toolbar, button, list-row glyphs), each rendered as monochrome transparent PNG fallbacks at 24pt and 25pt in @1x/@2x/@3x scale variants (24, 48, 72px and 25, 50, 75px). Variants are supplied at prepare time via `--variant id:purpose`. Style is `ios-symbol` (SF Symbols-style proportions, tintable, no launcher tile).
+- **`game-tiles`** - user-defined 1-12 static game-world tiles, each rendered as an opaque/full-bleed 256x256 tile. Output: one compact `tilesheet.png`, individual `tiles/<id>.png` files, `manifest.json`, and README. Uses `slot-only` because terrain tiles should preserve edge pixels.
 
 Add more bundles by authoring profile JSONs — no engine code changes required for typical new products.
 
@@ -30,6 +32,8 @@ Add more bundles by authoring profile JSONs — no engine code changes required 
 | 1–12 transparent stickers/emojis for Slack, Discord, Mattermost | `slack-stickers` bundle with `--variant id:purpose` per sticker (or paste the dev-pack preset) |
 | Single app icon at all platform sizes | `app-icons` bundle |
 | Family of distinct app icons (main + alternates, share-ext, watch, notification, light/dark) each at all sizes | `app-icon-set` bundle with `--variant id:purpose` per design |
+| iOS in-app symbols for tab bars, buttons, toolbars, list rows | `ios-button-icons` bundle with `--variant id:purpose` per glyph |
+| Static game-world tile sheets for terrain, floors, walls, maps | `game-tiles` bundle with `--variant id:purpose` per tile |
 | New icon-family product (favicon pack, social avatar set, logo variations) | Author a new bundle with the existing engine |
 | Animated sprite sheets or game character atlases | Use a separate sprite/animation-focused skill; icon-forge is for static icon and sticker products |
 
@@ -54,7 +58,11 @@ Add more bundles by authoring profile JSONs — no engine code changes required 
 |---|---|
 | (A) launcher, single design | `app-icons` bundle |
 | (A) launcher, family (main + alternates / share-ext / watch / notification / light/dark) | `app-icon-set` bundle |
-| (B) in-app symbols | Not shipped yet. Tell the user honestly and suggest either (i) Apple's SF Symbols app, or (ii) flagging the gap so an `ios-button-icons` bundle gets prioritised. **Do not** fake it by running `app-icon-set` with feature-named variants — the launcher-style prompts produce full-colour square tiles, not silhouette glyphs. |
+| (B) in-app symbols | `ios-button-icons` bundle with `--variant id:purpose` per glyph. **Do not** fake it by running `app-icon-set` with feature-named variants - the launcher-style prompts produce full-colour square tiles, not silhouette glyphs. |
+
+## STOP - before `prepare`: disambiguate tiles
+
+"Tiles" can mean different products. If the user asks for game-world terrain/floor/wall/map tiles, use `game-tiles`. If they ask for app launcher tiles, use `app-icons` or `app-icon-set`. If they ask for stickers or emoji tiles, use `slack-stickers`. If they ask for animated character sheets, do not use `game-tiles`; use a sprite/animation-focused skill.
 
 ## Default workflow (concept to packaged output)
 
@@ -136,11 +144,11 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
      --icon-forge-home "${ICON_FORGE_HOME:-$HOME/icon-forge}"
    ```
 
-   Output goes to `${ICON_FORGE_HOME:-$HOME/icon-forge}/<bundle-output>/<slug>/`. Each bundle decides its own subpath (sticker bundles write to `stickers/<slug>/`, app-icon bundles write to `app-icons/<slug>/`).
+   Output goes to `${ICON_FORGE_HOME:-$HOME/icon-forge}/<bundle-output>/<slug>/`. Each bundle decides its own subpath (sticker bundles write to `stickers/<slug>/`, app-icon bundles write to `app-icons/<slug>/`, iOS symbol bundles write to `ios-button-icons/<slug>/`, game tile bundles write to `game-tiles/<slug>/`).
 
 ## Subagent row generation
 
-For bundles with many parallel-eligible jobs (e.g. `slack-stickers` with 1–12 user-defined stickers, or `app-icon-set` with multiple variants), fan out generation to subagents. The parent agent owns the manifest and recording; subagents only produce candidate images.
+For bundles with many parallel-eligible jobs (e.g. `slack-stickers` with 1-12 user-defined stickers, `app-icon-set` with multiple variants, `ios-button-icons` with multiple symbols, or `game-tiles` with multiple tiles), fan out generation to subagents. The parent agent owns the manifest and recording; subagents only produce candidate images.
 
 Default flow:
 
@@ -160,7 +168,7 @@ Default flow:
 6. Parent runs `record` for each returned source. The lock file makes parallel record calls safe.
 7. Parent runs `derive`, `extract`, and `finalize`.
 
-**MANDATORY parallelism question for 8+ parallel-eligible jobs.** When *any* bundle runs with 8 or more parallel-eligible jobs (e.g. `slack-stickers` with 8+ stickers, or `app-icon-set` with 8+ variants), **after the first-result approval and before generating job 2 of N, halt and ask the user explicitly** whether to fan out to 2 subagents or run sequentially. Do not autonomously decide — neither default to fan-out nor fall back to sequential without an explicit answer.
+**MANDATORY parallelism question for 8+ parallel-eligible jobs.** When *any* bundle runs with 8 or more parallel-eligible jobs (e.g. `slack-stickers` with 8+ stickers, `app-icon-set` with 8+ variants, `ios-button-icons` with 8+ symbols, or `game-tiles` with 8+ tiles), **after the first-result approval and before generating job 2 of N, halt and ask the user explicitly** whether to fan out to 2 subagents or run sequentially. Do not autonomously decide - neither default to fan-out nor fall back to sequential without an explicit answer.
 
 **Question to ask (verbatim):**
 
@@ -179,6 +187,8 @@ Subagent write boundary: subagents must not edit `imagegen-jobs.json`, copy file
 Provenance enforcement: `record` rejects any source path that is not `$CODEX_HOME/generated_images/.../ig_*.png`, and any path that lives inside the run directory itself. Locally drawn or post-processed images cannot be ingested as visual job outputs. The hidden `--allow-synthetic-test-source` flag bypasses the check for unit tests only — never use it in real runs.
 
 Overwrite guard: `record` refuses to replace a job's existing decoded output unless `--force` is passed. This prevents a stale subagent result, a double-record bug, or a parallel race from silently overwriting an already-approved image. Re-recording after an explicit regenerate is a one-flag operation.
+
+Package overwrite semantics: when `finalize` is run with `--force`, folder-style packagers remove the existing entity output directory before writing new files. This prevents stale files from previous package runs from remaining in public output.
 
 Subagent handoff template (drop in the row id, prompt path, and input image list from `imagegen-jobs.json`):
 
@@ -284,6 +294,96 @@ Variant ID rules (validated at prepare time):
 The rest of the workflow is identical to other bundles: parent generates each variant via `$imagegen` (or fans them out to subagents), parent records each result with `record`, then `extract` and `finalize`. The packager writes `${ICON_FORGE_HOME}/app-icon-sets/<entity-id>/<variant>/<variant>-<size>.png` for every (variant, size) pair plus a family README.
 
 For a single icon at all sizes, use the simpler `app-icons` bundle — `app-icon-set` is overkill for one design.
+
+## Static game tile sheets (`game-tiles`)
+
+Use `game-tiles` for static terrain, floor, wall, and world tiles for games. The first version is optimized for opaque/full-bleed 256x256 tiles and uses `slot-only`, not chroma-key cleanup.
+
+Example:
+
+```bash
+python "${SKILL_DIR}/scripts/icon_forge.py" prepare \
+  --bundle game-tiles \
+  --entity-id forest-ruins \
+  --display-name "Forest Ruins" \
+  --description "Mossy top-down terrain tiles for a ruined forest map." \
+  --variant "grass:seamless mossy grass floor tile" \
+  --variant "stone:cracked stone floor tile" \
+  --variant "water:shallow blue water tile" \
+  --variant "sand:dry sand path tile"
+```
+
+Each variant becomes one tile. Keep purposes concrete and tile-shaped: `seamless mossy grass floor tile`, `cracked stone floor tile`, `shallow blue water tile`. Avoid character poses, icon metaphors, UI labels, scene descriptions, and animated states.
+
+Tile QA:
+
+- matches the variant purpose
+- readable and useful at 256x256
+- visually consistent with the first approved tile
+- no text, labels, UI, visible grid, borders, or watermarks
+- no scene frame, launcher-icon treatment, sticker treatment, or transparent padding
+- full-bleed opaque output is preserved
+- if the purpose says seamless or tileable, opposite edges should not obviously break the pattern
+
+For multi-tile `game-tiles` runs, the first approved tile becomes the canonical style reference. After recording and user approval of the first tile, run:
+
+```bash
+python "$SKILL_DIR/scripts/icon_forge.py" promote-reference \
+  --run-dir "$RUN_DIR" \
+  --job-id <first-approved-tile-id>
+```
+
+Before this promotion step, only the first tile should appear in `status.ready_jobs`; non-seed jobs are blocked by the canonical-reference sentinel. Do not generate remaining tiles until this promotion step has updated `imagegen-jobs.json` and removed the sentinel dependency.
+
+After all tile jobs are recorded and before finalize, run:
+
+```bash
+python "$SKILL_DIR/scripts/icon_forge.py" review-tiles --run-dir "$RUN_DIR"
+```
+
+For every generated tile, persist the subagent note and parent decision:
+
+```bash
+python "$SKILL_DIR/scripts/icon_forge.py" record-qa \
+  --run-dir "$RUN_DIR" \
+  --job-id <tile-id> \
+  --selected-source <generated-image-path> \
+  --subagent-note "<subagent qa_note>" \
+  --parent-decision accepted \
+  --parent-note "<why this tile is accepted>"
+```
+
+Review `qa/contact-sheet.png` and `qa/review.json`. Treat `qa/review.json` errors as blockers. Warnings require visual review. When the contact sheet is acceptable, explicitly approve the review:
+
+```bash
+python "$SKILL_DIR/scripts/icon_forge.py" approve-review \
+  --run-dir "$RUN_DIR" \
+  --note "cross-tile style, palette, and path geometry accepted"
+```
+
+Do not call the run done unless `qa/review.json` covers every tile, has matching decoded hashes, has `approved: true`, and cross-tile style, palette, and path geometry are coherent.
+
+## Dynamic iOS in-app symbols (`ios-button-icons`)
+
+Use `ios-button-icons` when the user wants custom glyphs inside an iOS app: tab bars, toolbar buttons, list rows, settings rows, empty-state actions, or navigation controls. These are monochrome, transparent, tintable UI symbols. They are not Home Screen launcher icons.
+
+Prepare with one `--variant id:purpose` per glyph:
+
+```bash
+python "${SKILL_DIR}/scripts/icon_forge.py" prepare \
+  --bundle ios-button-icons \
+  --entity-id myapp \
+  --display-name "MyApp" \
+  --description "MyApp in-app symbol family" \
+  --notes "calm productivity app, rounded monoline glyph language" \
+  --variant "search:magnifying glass for search tab" \
+  --variant "settings:simple gear for settings button" \
+  --variant "journal:open notebook for journal tab"
+```
+
+Variant rules are the same as other dynamic bundles: 1-12 variants per run, IDs match `^[a-z0-9][a-z0-9-]{0,30}$`, IDs are unique, and purpose is required. Keep each purpose to one simple symbol concept; do not ask for full scenes, coloured app tiles, or multi-object compositions.
+
+The packager writes `${ICON_FORGE_HOME:-$HOME/icon-forge}/ios-button-icons/<entity-id>/<variant>/<variant>-<size>.png` for 24pt and 25pt @1x/@2x/@3x raster fallbacks (24, 48, 72px and 25, 50, 75px) plus a family README.
 
 ## Authoring a new bundle
 

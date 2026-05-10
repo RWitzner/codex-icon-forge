@@ -36,6 +36,7 @@ from engine import (  # noqa: E402
 from engine import extractor as engine_extractor  # noqa: E402
 from engine.chroma import parse_hex_color  # noqa: E402
 from engine.manifest import load_manifest  # noqa: E402
+from engine.manifest import now_iso  # noqa: E402
 from engine.orchestrate import FinalizeOptions, finalize_run  # noqa: E402
 from engine.request_manifest import read_request  # noqa: E402
 from engine.run_setup import (  # noqa: E402
@@ -43,8 +44,12 @@ from engine.run_setup import (  # noqa: E402
     default_output_dir,
     derive_mirror,
     prepare_run,
+    promote_tile_reference,
+    record_tile_qa,
     record_result,
+    VALID_PARENT_DECISIONS,
 )
+from engine.tile_qa import review_tiles  # noqa: E402
 from PIL import Image  # noqa: E402
 
 
@@ -192,6 +197,49 @@ def _record(args: argparse.Namespace) -> int:
         force=getattr(args, "force", False),
     )
     print(json.dumps(result, indent=2))
+    return 0
+
+
+def _promote_reference(args: argparse.Namespace) -> int:
+    result = promote_tile_reference(
+        Path(args.run_dir).resolve(),
+        args.job_id,
+        force=getattr(args, "force", False),
+    )
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def _record_qa(args: argparse.Namespace) -> int:
+    result = record_tile_qa(
+        Path(args.run_dir).resolve(),
+        args.job_id,
+        Path(args.selected_source),
+        subagent_note=args.subagent_note,
+        parent_decision=args.parent_decision,
+        parent_note=args.parent_note,
+    )
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def _review_tiles(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir).resolve()
+    bundle = load_bundle_for_run(run_dir)
+    result = review_tiles(run_dir, bundle.atlas.states)
+    print(json.dumps(result, indent=2))
+    return 0 if result["ok"] else 2
+
+
+def _approve_review(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir).resolve()
+    review_path = run_dir / "qa" / "review.json"
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["approved"] = True
+    review["approved_at"] = now_iso()
+    review["approval_note"] = args.note
+    review_path.write_text(json.dumps(review, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps({"ok": True, "review_path": str(review_path)}, indent=2))
     return 0
 
 
@@ -344,6 +392,26 @@ def main() -> int:
         help=argparse.SUPPRESS,
     )
 
+    promote = sub.add_parser("promote-reference", help="promote a recorded game tile as canonical style reference")
+    promote.add_argument("--run-dir", required=True)
+    promote.add_argument("--job-id", required=True)
+    promote.add_argument("--force", action="store_true")
+
+    record_qa = sub.add_parser("record-qa", help="persist per-job game tile QA notes")
+    record_qa.add_argument("--run-dir", required=True)
+    record_qa.add_argument("--job-id", required=True)
+    record_qa.add_argument("--selected-source", required=True)
+    record_qa.add_argument("--subagent-note", required=True)
+    record_qa.add_argument("--parent-decision", required=True, choices=sorted(VALID_PARENT_DECISIONS))
+    record_qa.add_argument("--parent-note", required=True)
+
+    review_tiles_parser = sub.add_parser("review-tiles", help="create game tile QA contact sheet and review.json")
+    review_tiles_parser.add_argument("--run-dir", required=True)
+
+    approve_review = sub.add_parser("approve-review", help="approve the current game tile review.json")
+    approve_review.add_argument("--run-dir", required=True)
+    approve_review.add_argument("--note", required=True)
+
     extract = sub.add_parser("extract", help="run extractor strategy over decoded strips")
     extract.add_argument("--run-dir", required=True)
     extract.add_argument("--states", default="all", help='Comma-separated state ids or "all".')
@@ -370,6 +438,10 @@ def main() -> int:
         "prepare": _prepare,
         "status": _status,
         "record": _record,
+        "promote-reference": _promote_reference,
+        "record-qa": _record_qa,
+        "review-tiles": _review_tiles,
+        "approve-review": _approve_review,
         "extract": _extract,
         "derive": _derive,
         "finalize": _finalize,

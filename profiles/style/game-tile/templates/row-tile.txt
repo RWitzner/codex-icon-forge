@@ -1,0 +1,23 @@
+Create one static 256x256 game tile.
+
+Tile id: {state}
+Tile purpose: {purpose}
+Pack context:
+{entity_notes}
+
+Style:
+{style_notes}
+{extra_requirement_text}
+
+Tile requirements:
+- Fill the entire 256x256 square with usable game-world tile art.
+- Use a top-down or orthographic game-art viewpoint.
+- Preserve the same visual language, lighting, material detail, palette family, and rendering style as the rest of the pack.
+- Include no text, labels, UI, grid lines, visible tile borders, watermarks, app-icon framing, sticker framing, or transparent padding.
+- If the tile purpose includes "seamless" or "tileable", opposite edges must visually connect as a repeating terrain texture.
+- Return a single tile image only, not a preview sheet or mockup.
+
+Forbidden artifacts:
+{transparency_artifact_text}
+
+{state_requirement_text}

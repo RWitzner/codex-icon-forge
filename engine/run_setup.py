@@ -25,9 +25,14 @@ from .manifest import ImagegenManifest, Job, JobInput, now_iso
 from .profiles import Bundle, StateSpec, VariantSpec, materialize_dynamic_atlas
 from .prompts import compose_base_prompt, compose_row_prompt
 from .request_manifest import read_request, write_request
+from .tile_contracts import contract_for_state, normalize_game_tile_style_notes
+from .tile_guides import render_tile_guides
 
 CANONICAL_BASE_PATH = "references/canonical-base.png"
 BASE_DECODED_PATH = "decoded/base.png"
+CANONICAL_TILE_STYLE_PATH = "references/canonical-tile-style.png"
+CANONICAL_TILE_SENTINEL = "__canonical_tile_reference__"
+VALID_PARENT_DECISIONS = {"accepted", "rejected", "needs-regeneration"}
 
 
 @dataclass
@@ -91,6 +96,7 @@ def _make_jobs(
     bundle: Bundle,
     reference_inputs: list[JobInput],
     layout_guides_enabled: bool,
+    tile_guide_paths: dict[str, str] | None = None,
 ) -> list[Job]:
     atlas = bundle.atlas
     jobs: list[Job] = []
@@ -117,6 +123,9 @@ def _make_jobs(
             )
         )
 
+    tile_guide_paths = tile_guide_paths or {}
+    game_tile_seed_id = atlas.states[0].id if bundle.id == "game-tiles" and atlas.states else None
+
     for state in atlas.states:
         depends_on: list[str] = []
         extra_inputs: list[JobInput] = []
@@ -124,6 +133,8 @@ def _make_jobs(
 
         if atlas.requires_base:
             depends_on.append("base")
+        if game_tile_seed_id is not None and state.id != game_tile_seed_id:
+            depends_on.append(CANONICAL_TILE_SENTINEL)
 
         derivation = atlas.derivation_for(state.id)
         if derivation is not None:
@@ -152,11 +163,28 @@ def _make_jobs(
                     ),
                 )
             )
+        if state.id in tile_guide_paths:
+            row_inputs.append(
+                JobInput(
+                    path=tile_guide_paths[state.id],
+                    role=(
+                        "tile layout guide for path mouth width and edge-center alignment; "
+                        "use for geometry only, do not copy guide color or visible marks"
+                    ),
+                )
+            )
         if atlas.requires_base:
             row_inputs.append(
                 JobInput(path=CANONICAL_BASE_PATH, role="canonical identity reference")
             )
             row_inputs.append(JobInput(path=BASE_DECODED_PATH, role="approved base image"))
+        if game_tile_seed_id is not None and state.id != game_tile_seed_id:
+            row_inputs.append(
+                JobInput(
+                    path=CANONICAL_TILE_STYLE_PATH,
+                    role="approved canonical style reference from the first game tile",
+                )
+            )
         row_inputs.extend(extra_inputs)
 
         jobs.append(
@@ -181,6 +209,22 @@ def _make_jobs(
     return jobs
 
 
+def _validate_game_tile_seed_order(bundle: Bundle) -> None:
+    if bundle.id != "game-tiles" or len(bundle.atlas.states) < 2:
+        return
+    first = contract_for_state(bundle.atlas.states[0])
+    later_kinds = {
+        contract_for_state(state).kind
+        for state in bundle.atlas.states[1:]
+    }
+    if first.kind.startswith("path_") and "base_terrain" in later_kinds:
+        raise ValueError(
+            "game-tiles uses the first variant as the canonical style seed; "
+            "put a base terrain tile such as grass, stone, sand, or water first, "
+            "then path/corner/transition tiles after it"
+        )
+
+
 def prepare_run(options: PrepareOptions) -> dict[str, Any]:
     bundle = options.bundle
     if bundle.atlas.is_dynamic:
@@ -198,6 +242,7 @@ def prepare_run(options: PrepareOptions) -> dict[str, Any]:
             f"bundle {bundle.id!r} does not accept --variant; only bundles "
             "whose atlas declares dynamic_states.enabled support per-run variants"
         )
+    _validate_game_tile_seed_order(bundle)
     run_dir = options.output_dir.expanduser().resolve()
     if run_dir.exists() and any(run_dir.iterdir()) and not options.force:
         raise FileExistsError(
@@ -228,6 +273,8 @@ def prepare_run(options: PrepareOptions) -> dict[str, Any]:
 
     chroma = choose_chroma_key(bundle.style, copied_ref_paths, options.chroma_key)
     guides = render_all(run_dir, bundle.atlas)
+    tile_guides = render_tile_guides(run_dir, bundle.atlas.states) if bundle.id == "game-tiles" else []
+    tile_guide_paths = {guide.state_id: guide.path for guide in tile_guides}
 
     entity_notes = options.entity_notes.strip()
     if not entity_notes:
@@ -248,6 +295,11 @@ def prepare_run(options: PrepareOptions) -> dict[str, Any]:
     (prompt_dir / "base.md").write_text(base_prompt + "\n", encoding="utf-8")
 
     for state in bundle.atlas.states:
+        row_style_notes = options.style_notes
+        extra_requirement_text = ""
+        if bundle.id == "game-tiles":
+            row_style_notes = normalize_game_tile_style_notes(options.style_notes)
+            extra_requirement_text = "\n\n" + contract_for_state(state).prompt_text
         row_prompt = compose_row_prompt(
             bundle.style,
             bundle.atlas,
@@ -256,7 +308,8 @@ def prepare_run(options: PrepareOptions) -> dict[str, Any]:
             entity_notes=entity_notes,
             chroma_key_name=chroma["name"],
             chroma_key_hex=chroma["hex"],
-            user_style_notes=options.style_notes,
+            user_style_notes=row_style_notes,
+            extra_requirement_text=extra_requirement_text,
         )
         (row_prompt_dir / f"{state.id}.md").write_text(row_prompt + "\n", encoding="utf-8")
 
@@ -288,6 +341,7 @@ def prepare_run(options: PrepareOptions) -> dict[str, Any]:
             for state in bundle.atlas.states
         ],
         "layout_guides": [guide.to_dict() for guide in guides],
+        "tile_guides": [guide.to_dict() for guide in tile_guides],
         "references": copied_refs,
         "chroma_key": chroma,
         "variants": [
@@ -301,7 +355,12 @@ def prepare_run(options: PrepareOptions) -> dict[str, Any]:
         JobInput(path=_rel(Path(str(ref["copied_path"])), run_dir), role="entity reference")
         for ref in copied_refs
     ]
-    jobs = _make_jobs(bundle, reference_inputs, bundle.atlas.layout_guides.enabled)
+    jobs = _make_jobs(
+        bundle,
+        reference_inputs,
+        bundle.atlas.layout_guides.enabled,
+        tile_guide_paths=tile_guide_paths,
+    )
 
     manifest = ImagegenManifest(
         bundle=bundle.id,
@@ -391,6 +450,15 @@ def validate_required_grounding(job: Job, run_dir: Path) -> None:
         )
 
 
+def validate_dependencies_satisfied(job: Job, completed_job_ids: set[str]) -> None:
+    missing = [dependency for dependency in job.depends_on if dependency not in completed_job_ids]
+    if missing:
+        raise ValueError(
+            f"job {job.id!r} cannot be recorded before dependencies are complete: "
+            + ", ".join(missing)
+        )
+
+
 def record_result(
     run_dir: Path,
     job_id: str,
@@ -430,6 +498,8 @@ def record_result(
     try:
         manifest = load_manifest(run_dir)
         job = manifest.job(job_id)
+        completed = {item.id for item in manifest.jobs if item.status == "complete"}
+        validate_dependencies_satisfied(job, completed)
         validate_required_grounding(job, run_dir)
         target = run_dir / job.output_path
         if target.exists() and not force:
@@ -462,6 +532,84 @@ def record_result(
         }
     finally:
         release_manifest_lock(lock)
+
+
+def promote_tile_reference(run_dir: Path, job_id: str, *, force: bool = False) -> dict[str, Any]:
+    """Promote the approved seed tile into the canonical game-tile reference."""
+
+    from .manifest import acquire_manifest_lock, load_manifest, release_manifest_lock
+
+    run_dir = run_dir.resolve()
+    source = run_dir / "decoded" / f"{job_id}.png"
+    if not source.is_file():
+        raise FileNotFoundError(f"decoded tile for {job_id!r} is missing: {source}")
+    target = run_dir / CANONICAL_TILE_STYLE_PATH
+    if target.exists() and not force:
+        raise FileExistsError(
+            f"canonical tile style reference already exists at {target}; pass force=True to replace it"
+        )
+
+    lock = acquire_manifest_lock(run_dir)
+    try:
+        manifest = load_manifest(run_dir)
+        if manifest.bundle == "game-tiles" and manifest.jobs and manifest.jobs[0].id != job_id:
+            raise ValueError(
+                "game-tiles canonical reference must be promoted from the first seed job "
+                f"{manifest.jobs[0].id!r}, got {job_id!r}"
+            )
+        seed = manifest.job(job_id)
+        if seed.status != "complete":
+            raise ValueError(f"job {job_id!r} must be recorded before promotion")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        unlocked: list[str] = []
+        for job in manifest.jobs:
+            if CANONICAL_TILE_SENTINEL in job.depends_on:
+                job.depends_on = [dep for dep in job.depends_on if dep != CANONICAL_TILE_SENTINEL]
+                job.parallelizable_after = [
+                    dep for dep in job.parallelizable_after if dep != CANONICAL_TILE_SENTINEL
+                ]
+                unlocked.append(job.id)
+        manifest.save(run_dir)
+        return {
+            "ok": True,
+            "job_id": job_id,
+            "canonical_reference": str(target),
+            "unlocked_jobs": unlocked,
+            "next_ready_jobs": [job.id for job in manifest.ready_jobs()],
+        }
+    finally:
+        release_manifest_lock(lock)
+
+
+def record_tile_qa(
+    run_dir: Path,
+    job_id: str,
+    selected_source: Path,
+    *,
+    subagent_note: str,
+    parent_decision: str,
+    parent_note: str,
+) -> dict[str, Any]:
+    run_dir = run_dir.resolve()
+    selected_source = selected_source.expanduser().resolve()
+    if parent_decision not in VALID_PARENT_DECISIONS:
+        raise ValueError(
+            f"parent_decision must be one of {sorted(VALID_PARENT_DECISIONS)}, got {parent_decision!r}"
+        )
+    qa_dir = run_dir / "qa" / "jobs"
+    qa_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "job_id": job_id,
+        "selected_source": str(selected_source),
+        "subagent_note": subagent_note,
+        "parent_decision": parent_decision,
+        "parent_note": parent_note,
+        "recorded_at": now_iso(),
+    }
+    target = qa_dir / f"{job_id}.json"
+    target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return {"ok": True, "qa_path": str(target)}
 
 
 def derive_mirror(run_dir: Path, target_state: str, decision_note: str) -> dict[str, Any]:

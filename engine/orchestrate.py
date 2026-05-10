@@ -15,6 +15,7 @@ from typing import Any
 from . import composer, validator
 from .packager import PackageContext, package
 from .profiles import Bundle
+from .tile_qa import sha256_path
 
 
 @dataclass
@@ -47,7 +48,13 @@ def finalize_run(bundle: Bundle, options: FinalizeOptions) -> dict[str, Any]:
 
     validate_target = webp_path or png_path
     validation = validator.validate_atlas(
-        validate_target, bundle.atlas, bundle.extractor
+        validate_target,
+        bundle.atlas,
+        bundle.extractor,
+        allow_opaque=bool(bundle.extractor.params.get("allow_opaque", False)),
+        allow_near_opaque_used_cells=bool(
+            bundle.extractor.params.get("allow_near_opaque_used_cells", False)
+        ),
     )
     validation_path = options.output_run_dir / "validation.json"
     validation_path.write_text(
@@ -63,6 +70,61 @@ def finalize_run(bundle: Bundle, options: FinalizeOptions) -> dict[str, Any]:
             "warnings": validation.warnings,
             "validation_path": str(validation_path),
         }
+
+    if bundle.id == "game-tiles":
+        review_path = options.output_run_dir / "qa" / "review.json"
+        if not review_path.is_file():
+            return {
+                "ok": False,
+                "stage": "tile-qa",
+                "errors": [f"game-tiles finalize requires prior tile QA review: {review_path}"],
+                "warnings": validation.warnings,
+                "validation_path": str(validation_path),
+            }
+        review = json.loads(review_path.read_text(encoding="utf-8"))
+        expected_state_ids = [state.id for state in bundle.atlas.states]
+        contact_sheet = Path(str(review.get("contact_sheet", "")))
+        review_tiles = review.get("tiles", [])
+        review_state_ids = review.get("state_ids", [])
+        errors: list[str] = []
+        if review_state_ids != expected_state_ids:
+            errors.append(
+                f"tile QA state_ids do not match atlas states: {review_state_ids} != {expected_state_ids}"
+            )
+        if not contact_sheet.is_file():
+            errors.append(f"tile QA contact sheet missing: {contact_sheet}")
+        if not review.get("approved"):
+            errors.append("tile QA review has not been explicitly parent-approved")
+        if len(review_tiles) != len(expected_state_ids):
+            errors.append("tile QA review does not cover every tile")
+        review_tile_ids = [tile.get("id") for tile in review_tiles]
+        if review_tile_ids != expected_state_ids:
+            errors.append(
+                f"tile QA tile entries do not match atlas states: {review_tile_ids} != {expected_state_ids}"
+            )
+        if len(set(review_tile_ids)) != len(review_tile_ids):
+            errors.append(f"tile QA review has duplicate tile entries: {review_tile_ids}")
+        for tile in review_tiles:
+            tile_id = tile.get("id")
+            decoded_path = options.output_run_dir / "decoded" / f"{tile_id}.png"
+            if not tile_id:
+                errors.append("tile QA entry is missing id")
+                continue
+            if not decoded_path.is_file():
+                errors.append(f"{tile_id}: decoded tile missing")
+            elif tile.get("decoded_sha256") != sha256_path(decoded_path):
+                errors.append(f"{tile_id}: QA review is stale; decoded_sha256 changed")
+            errors.extend(f"{tile_id}: {error}" for error in tile.get("errors", []))
+
+        if not review.get("ok") or errors:
+            return {
+                "ok": False,
+                "stage": "tile-qa",
+                "errors": errors or ["game-tiles QA review failed"],
+                "warnings": validation.warnings,
+                "validation_path": str(validation_path),
+                "review_path": str(review_path),
+            }
 
     context = PackageContext(
         entity_id=options.entity_id,

@@ -1,0 +1,9 @@
+Create the visual identity basis for `{display_name}` as an iOS in-app symbol family.
+
+Description: {entity_notes}.
+Style contract: {style_notes}
+
+Output a single centered monochrome symbol on a perfectly flat pure {chroma_key_name} {chroma_key_hex} chroma-key background. The mark should establish the product's glyph language: simple, optical-center balanced, rounded joins, readable at 24x24, and suitable for tinting in an iOS app. Do not render a launcher tile, rounded-square app icon, full-colour illustration, text, or UI chrome.
+
+Forbidden artifacts:
+{transparency_artifact_text}

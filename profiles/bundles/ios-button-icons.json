@@ -1,0 +1,8 @@
+{
+  "id": "ios-button-icons",
+  "description": "User-defined family of iOS in-app symbols for tab bars, toolbars, buttons, and list rows. Produces monochrome transparent glyph PNGs at practical UI sizes. This is for in-app UI symbols, not Home Screen launcher icons.",
+  "atlas": "ios-button-icons",
+  "style": "ios-symbol",
+  "extractor": "chroma-key-slots",
+  "packager": "ios-button-icons-multisize"
+}

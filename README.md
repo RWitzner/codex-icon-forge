@@ -6,7 +6,7 @@
 
 **AI-powered icon and sticker pack pipeline for [Codex][codex-link].**<br/>
 Drop the folder into `~/.codex/skills/` and restart Codex.<br/>
-Slack sticker packs, app icon sets, favicons, and other icon-family<br/>
+Slack sticker packs, app icon sets, iOS UI symbols, game tiles, favicons, and other visual asset<br/>
 products built end-to-end from a single concept.
 
 [![][github-license-shield]][github-license-link]
@@ -25,21 +25,29 @@ products built end-to-end from a single concept.
 
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/what-it-makes-dark.png"><img src="assets/sections/what-it-makes.png" width="32" align="absmiddle"></picture> What it makes
 
-Each "bundle" is a complete icon product. Same engine, three output shapes.
+Each "bundle" is a complete visual asset product. Same engine, five output shapes.
 
 <table>
 <tr>
-  <th align="center" width="33%">
+  <th align="center" width="20%">
     <a href="profiles/bundles/slack-stickers.json"><img src="examples/slack-stickers/dev-pack/shipping-it.png" width="96" alt="slack-stickers"></a>
     <br/><br/><code>slack-stickers</code>
   </th>
-  <th align="center" width="33%">
+  <th align="center" width="20%">
     <a href="profiles/bundles/app-icons.json"><img src="examples/slack-stickers/dev-pack/deploy.png" width="96" alt="app-icons"></a>
     <br/><br/><code>app-icons</code>
   </th>
-  <th align="center" width="33%">
+  <th align="center" width="20%">
     <a href="profiles/bundles/app-icon-set.json"><img src="examples/slack-stickers/dev-pack/ship.png" width="96" alt="app-icon-set"></a>
     <br/><br/><code>app-icon-set</code>
+  </th>
+  <th align="center" width="20%">
+    <a href="profiles/bundles/ios-button-icons.json"><img src="examples/app-icon-set/monoline-suite/search/search-128.png" width="96" alt="ios-button-icons"></a>
+    <br/><br/><code>ios-button-icons</code>
+  </th>
+  <th align="center" width="20%">
+    <a href="profiles/bundles/game-tiles.json"><img src="examples/slack-stickers/dev-pack/deploy.png" width="96" alt="game-tiles"></a>
+    <br/><br/><code>game-tiles</code>
   </th>
 </tr>
 <tr>
@@ -60,6 +68,18 @@ Each "bundle" is a complete icon product. Same engine, three output shapes.
     + family README
     <br/><br/>
     <sub><strong>Multi-target icon families</strong><br/>Main + share-ext + watch + ...</sub>
+  </td>
+  <td valign="top" align="center">
+    1-12 iOS UI symbols<br/>x <strong>6 sizes each</strong><br/>
+    + family README
+    <br/><br/>
+    <sub><strong>In-app glyphs</strong><br/>Tab bars, buttons, list rows.</sub>
+  </td>
+  <td valign="top" align="center">
+    1-12 static game-world tiles<br/>
+    + sheet, individual PNGs, JSON manifest
+    <br/><br/>
+    <sub><strong>Terrain and map tiles</strong><br/>You supply tiles via <code>--variant</code>.</sub>
   </td>
 </tr>
 </table>
@@ -87,7 +107,7 @@ cd "${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 python -m pip install -r requirements.txt
 ```
 
-Restart Codex, then ask for a sticker pack or app icon set:
+Restart Codex, then ask for a sticker pack, app icon set, iOS symbol pack, or game tile sheet:
 
 - **Codex desktop app** - invoke the slash command `/icon-forge` to load the skill explicitly, then describe what you want.
 - **Codex CLI** - just describe what you want in natural language. The agent picks up the skill from its description and drives the pipeline. (No slash command needed; slash commands are a desktop-app feature.)
@@ -102,7 +122,7 @@ Either way the underlying engine is identical.
 
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/examples-dark.png"><img src="assets/sections/examples.png" width="32" align="absmiddle"></picture> Examples
 
-Three real runs through the pipeline, spanning two bundles and two completely different visual languages. Same `prepare → status → record → extract → finalize` flow every time.
+Real runs through the pipeline, spanning multiple bundles and visual languages. Same `prepare → status → record → extract → finalize` flow every time.
 
 ### `slack-stickers` - flat-vector cartoon
 
@@ -182,6 +202,52 @@ A completely different visual language - single-weight stroke, no fills, charcoa
 [![][back-to-top-shield]](#readme-top)
 
 </div>
+
+### `ios-button-icons` - iOS in-app symbols
+
+Use this bundle for monochrome, transparent, tintable PNG fallback glyphs inside an iOS app: tab bars, toolbars, buttons, list rows, and navigation controls. For production-grade custom SF Symbols, use Apple's SVG-template workflow. Do not use this bundle for Home Screen launcher icons; use `app-icons` or `app-icon-set` for those.
+
+```bash
+python scripts/icon_forge.py prepare \
+  --bundle ios-button-icons \
+  --entity-id myapp \
+  --display-name "MyApp" \
+  --description "MyApp in-app symbol family" \
+  --variant search:"magnifying glass for search tab" \
+  --variant settings:"simple gear for settings button" \
+  --variant journal:"open notebook for journal tab"
+```
+
+Final output goes to `${ICON_FORGE_HOME:-$HOME/icon-forge}/ios-button-icons/myapp/` with one subfolder per symbol and 24pt/25pt @1x/@2x/@3x PNGs.
+
+### `game-tiles` - static 256x256 tile sheets
+
+Use this bundle for terrain, floor, wall, and world tiles for games. Each variant becomes one opaque/full-bleed 256x256 tile. This bundle is for static tiles, not animated character sprite sheets.
+
+`game-tiles` uses a hatch-pet-style grounded workflow: seed tile first, first approved tile as canonical reference, tile layout guides for topology-sensitive variants, persisted per-job QA notes, explicit parent review approval, and a hard QA gate before packaging.
+
+```bash
+python scripts/icon_forge.py prepare \
+  --bundle game-tiles \
+  --entity-id forest-ruins \
+  --display-name "Forest Ruins" \
+  --description "Mossy top-down terrain tiles for a ruined forest map." \
+  --variant grass:"seamless mossy grass floor tile" \
+  --variant stone:"cracked stone floor tile" \
+  --variant water:"shallow blue water tile" \
+  --variant sand:"dry sand path tile"
+```
+
+Final output goes to `${ICON_FORGE_HOME:-$HOME/icon-forge}/game-tiles/forest-ruins/`:
+
+```text
+tilesheet.png
+tiles/<tile-id>.png
+manifest.json
+README.md
+```
+
+When `finalize` is run with `--force`, folder-style packagers remove the existing entity output directory before writing new files. This keeps stale files from earlier runs out of public output.
 
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/workflow-dark.png"><img src="assets/sections/workflow.png" width="32" align="absmiddle"></picture> Workflow
 

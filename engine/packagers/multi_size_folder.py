@@ -19,6 +19,7 @@ Profile params:
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -109,7 +110,12 @@ def _multi_size_folder(
             )
             targets.append(target)
 
-    if not force:
+    with Image.open(atlas_path) as opened:
+        atlas_image = opened.convert("RGBA")
+
+    if force and output_dir.exists():
+        shutil.rmtree(output_dir)
+    elif not force:
         existing = [t for t in targets if t.exists()]
         if existing:
             raise FileExistsError(
@@ -124,9 +130,6 @@ def _multi_size_folder(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     written: list[str] = []
-    with Image.open(atlas_path) as opened:
-        atlas_image = opened.convert("RGBA")
-
     target_iter = iter(targets)
     for state in atlas.states:
         left = 0

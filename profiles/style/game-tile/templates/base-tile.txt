@@ -1,0 +1,13 @@
+Create the canonical look for a static 256x256 game tile pack.
+
+Subject:
+{entity_notes}
+
+Style:
+{style_notes}
+
+Output requirements:
+- one opaque/full-bleed square tile concept
+- top-down or orthographic game-art viewpoint
+- no text, labels, UI, grid lines, borders, watermarks, app-icon treatment, or sticker treatment
+- no transparent padding

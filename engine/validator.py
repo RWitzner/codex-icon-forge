@@ -66,6 +66,10 @@ def validate_atlas(
     near_opaque = float(
         extractor_profile.params.get("near_opaque_threshold", _DEFAULT_NEAR_OPAQUE_THRESHOLD)
     )
+    require_full_bleed = bool(extractor_profile.params.get("require_full_bleed", False))
+    full_bleed_alpha_threshold = float(
+        extractor_profile.params.get("full_bleed_alpha_threshold", 0.98)
+    )
 
     try:
         with Image.open(atlas_path) as opened:
@@ -128,6 +132,17 @@ def validate_atlas(
                 result.errors.append(
                     f"{state_id} row {row_index} column {column_index} "
                     f"is empty or too sparse ({nontransparent} pixels)"
+                )
+            if (
+                used
+                and require_full_bleed
+                and nontransparent
+                < geo.cell_width * geo.cell_height * full_bleed_alpha_threshold
+            ):
+                result.errors.append(
+                    f"{state_id} row {row_index} column {column_index} "
+                    "is not full-bleed enough for this extractor profile "
+                    f"({nontransparent}/{geo.cell_width * geo.cell_height} alpha pixels)"
                 )
             if used and nontransparent > geo.cell_width * geo.cell_height * near_opaque:
                 near_opaque_used[f"{state_id} row {row_index}"].append(column_index)

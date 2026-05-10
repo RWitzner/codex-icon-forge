@@ -1,0 +1,43 @@
+{
+  "id": "game-tile",
+  "description": "Static game tile style for opaque/full-bleed terrain, floor, wall, and world tiles.",
+  "extends": null,
+  "target_kind": "static game tile",
+  "templates": {
+    "base": "templates/base-tile.txt",
+    "row_strip": "templates/row-tile.txt"
+  },
+  "prompt_blocks": {
+    "house_style": "High-quality top-down or orthographic game-art tile. Full-bleed 256x256 composition, no margins, no labels, no UI, no icon border, no isolated sticker silhouette. The image should read as one usable map tile, not as a framed illustration.",
+    "user_style_notes_join": " Apply these style notes consistently across every tile in the pack: {user_style_notes}."
+  },
+  "forbidden_artifacts": [
+    "text",
+    "letters",
+    "numbers",
+    "watermarks",
+    "visible grid lines",
+    "tile borders",
+    "UI panels",
+    "app icon squircle",
+    "sticker outline",
+    "drop shadow outside the tile",
+    "transparent padding",
+    "scene frame",
+    "camera vignette"
+  ],
+  "state_requirements": {},
+  "chroma_key": {
+    "selection": "auto",
+    "candidates": [
+      {
+        "name": "magenta",
+        "hex": "#ff00ff"
+      },
+      {
+        "name": "green",
+        "hex": "#00ff00"
+      }
+    ]
+  }
+}

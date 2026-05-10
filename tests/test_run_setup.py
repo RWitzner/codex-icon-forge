@@ -25,6 +25,8 @@ sys.path.insert(0, str(SKILL_DIR))
 from engine import VariantSpec, load_bundle, load_bundle_for_run  # noqa: E402
 from engine.profiles import ProfileError, materialize_dynamic_atlas  # noqa: E402
 from engine.run_setup import (  # noqa: E402
+    CANONICAL_TILE_SENTINEL,
+    CANONICAL_TILE_STYLE_PATH,
     PrepareOptions,
     default_output_dir,
     prepare_run,
@@ -113,6 +115,67 @@ class RunSetupSlackStickersTests(unittest.TestCase):
             self.assertEqual(result["chroma_key"]["hex"], "#00FF00")
 
 
+class RunSetupGameTilesTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bundle = load_bundle("game-tiles")
+
+    def test_prepare_blocks_non_seed_until_canonical_reference_and_records_variants(self) -> None:
+        variants = [
+            VariantSpec(id="grass", purpose="seamless mossy grass floor tile"),
+            VariantSpec(id="stone", purpose="cracked stone floor tile"),
+            VariantSpec(id="water", purpose="shallow blue water tile"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run"
+            options = PrepareOptions(
+                bundle=self.bundle,
+                entity_id="forest-ruins",
+                display_name="Forest Ruins",
+                description="Mossy top-down terrain tiles.",
+                entity_notes="mossy ruined forest terrain",
+                style_notes="muted greens and cool grey stone",
+                references=[],
+                output_dir=run_dir,
+                chroma_key="auto",
+                force=True,
+                variants=variants,
+            )
+
+            result = prepare_run(options)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["ready_jobs"], ["grass"])
+
+            request = json.loads((run_dir / "request.json").read_text(encoding="utf-8"))
+            self.assertEqual(request["bundle"], "game-tiles")
+            self.assertEqual(
+                [(item["id"], item["purpose"]) for item in request["variants"]],
+                [(variant.id, variant.purpose) for variant in variants],
+            )
+
+            manifest = json.loads(
+                (run_dir / "imagegen-jobs.json").read_text(encoding="utf-8")
+            )
+            jobs = manifest["jobs"]
+            self.assertEqual([job["id"] for job in jobs], ["grass", "stone", "water"])
+            for index, job in enumerate(jobs):
+                if index == 0:
+                    self.assertEqual(job["depends_on"], [])
+                    self.assertEqual(job["input_images"], [])
+                    self.assertTrue(job["allow_prompt_only_generation"])
+                else:
+                    self.assertEqual(job["depends_on"], [CANONICAL_TILE_SENTINEL])
+                    input_paths = [item["path"] for item in job["input_images"]]
+                    self.assertIn(CANONICAL_TILE_STYLE_PATH, input_paths)
+                    self.assertFalse(job["allow_prompt_only_generation"])
+                self.assertEqual(job["mirror_policy"], {})
+                prompt = (run_dir / job["prompt_file"]).read_text(encoding="utf-8")
+                self.assertIn("Create one static 256x256 game tile.", prompt)
+                self.assertIn("Tile coherence contract:", prompt)
+                self.assertIn("no text", prompt.lower())
+            self.assertFalse((run_dir / "references" / "layout-guides").exists())
+
+
 class RunSetupAppIconsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -171,6 +234,9 @@ class CliEndToEndTests(unittest.TestCase):
         bundle_ids = {entry["id"] for entry in result["bundles"]}
         self.assertIn("slack-stickers", bundle_ids)
         self.assertIn("app-icons", bundle_ids)
+        self.assertIn("app-icon-set", bundle_ids)
+        self.assertIn("ios-button-icons", bundle_ids)
+        self.assertIn("game-tiles", bundle_ids)
 
     def test_show_subcommand_resolves_app_icons(self) -> None:
         result = self._run_cli("show", "app-icons")

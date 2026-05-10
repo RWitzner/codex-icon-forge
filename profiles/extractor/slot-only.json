@@ -4,6 +4,11 @@
   "strategy": "slot-only",
   "params": {
     "min_used_pixels": 50,
-    "near_opaque_threshold": 1.01
+    "near_opaque_threshold": 1.01,
+    "allow_opaque": true,
+    "allow_near_opaque_used_cells": true,
+    "preserve_full_bleed": true,
+    "require_full_bleed": true,
+    "full_bleed_alpha_threshold": 0.98
   }
 }

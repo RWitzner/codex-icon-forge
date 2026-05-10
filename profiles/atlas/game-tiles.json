@@ -1,0 +1,24 @@
+{
+  "id": "game-tiles",
+  "description": "User-defined static game tile sheet: 1-12 independent 256x256 opaque/full-bleed terrain or world tiles. Variants are supplied at prepare time via --variant id:purpose; each becomes one tile.",
+  "requires_base": false,
+  "geometry": {
+    "columns": 1,
+    "rows": 1,
+    "cell_width": 256,
+    "cell_height": 256
+  },
+  "states": [],
+  "derivations": [],
+  "layout_guides": {
+    "enabled": false,
+    "safe_margin_x": 0,
+    "safe_margin_y": 0,
+    "guide_style": {}
+  },
+  "dynamic_states": {
+    "enabled": true,
+    "source": "prepare_variants",
+    "max_states": 12
+  }
+}

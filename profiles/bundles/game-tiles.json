@@ -1,0 +1,8 @@
+{
+  "id": "game-tiles",
+  "description": "User-defined static game-world tile pack: 1-12 opaque/full-bleed 256x256 tiles supplied via --variant id:purpose. Ships a compact tilesheet, individual tile PNGs, JSON manifest, and README.",
+  "atlas": "game-tiles",
+  "style": "game-tile",
+  "extractor": "slot-only",
+  "packager": "game-tilesheet"
+}

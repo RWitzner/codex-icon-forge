@@ -1,0 +1,13 @@
+{
+  "id": "ios-button-icons-multisize",
+  "description": "Family of iOS in-app symbols, each rendered at practical UI glyph sizes. One subfolder per symbol; one shared README at the entity root.",
+  "strategy": "multi-size-folder",
+  "output_root": "${ICON_FORGE_HOME:-$HOME/icon-forge}/ios-button-icons/{entity_id}",
+  "params": {
+    "image_format": "PNG",
+    "sizes": [24, 48, 72, 25, 50, 75],
+    "naming": "{state}/{state}-{size}.png",
+    "readme_filename": "README.md",
+    "readme_template": "# {display_name} iOS in-app symbol pack\n\n{description}\n\n## Symbols ({state_count})\n\n{state_list}\n\n## Sizes\n\nEach symbol is provided as raster template PNG scale variants: 24pt at 1x/2x/3x (24, 48, 72px) for general buttons, toolbars, and list rows, plus 25pt at 1x/2x/3x (25, 50, 75px) for tab-bar-style glyphs.\n\n## Recommended use\n\nUse these transparent monochrome PNGs as fallback template images for iOS tab bars, toolbars, buttons, and list rows when SF Symbols is not enough or when a custom product-specific glyph is required. Prefer tint/template rendering in the app so the system can adapt the symbol to selected, disabled, light, dark, and accessibility states.\n\nFor a production-grade custom SF Symbol, use Apple's SF Symbols SVG-template workflow instead of raster PNGs. This bundle provides PNG assets only.\n\nDo not use this pack as Home Screen launcher icons. For launcher tiles, use `app-icons` or `app-icon-set` instead.\n\nAll files are PNG with transparent backgrounds. {file_count} files total.\n"
+  }
+}

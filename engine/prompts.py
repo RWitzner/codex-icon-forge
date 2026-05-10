@@ -80,6 +80,7 @@ def compose_row_prompt(
     chroma_key_name: str,
     chroma_key_hex: str,
     user_style_notes: str = "",
+    extra_requirement_text: str = "",
 ) -> str:
     style_notes = compose_style_notes(style, user_style_notes)
     return style.row_strip_template.format(
@@ -91,6 +92,7 @@ def compose_row_prompt(
         entity_notes=entity_notes,
         style_notes=style_notes,
         state_requirement_text=_state_requirement_text(style, state.id),
+        extra_requirement_text=extra_requirement_text,
         transparency_artifact_text=_transparency_artifact_text(style),
         chroma_key_name=chroma_key_name,
         chroma_key_hex=chroma_key_hex,

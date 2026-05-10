@@ -1,0 +1,30 @@
+{
+  "id": "ios-symbol",
+  "description": "iOS in-app symbol style: monochrome SF Symbols-style glyphs for tab bars, toolbars, buttons, and list rows. Distinct from launcher app icons.",
+  "extends": null,
+  "target_kind": "iOS in-app symbol",
+  "templates": {
+    "base": "templates/base-symbol.txt",
+    "row_strip": "templates/row-symbol.txt"
+  },
+  "prompt_blocks": {
+    "house_style": "iOS in-app symbol style: a clean monochrome SF Symbols-style UI glyph, drawn as a simple filled or stroked silhouette that can be used as a template image and tinted by the app. Centered optical balance, rounded stroke joins, high legibility at 24x24, no enclosing launcher tile, no coloured background, no scenery, no text.",
+    "user_style_notes_join": " Additional user style notes: {user_style_notes}.",
+    "purpose_wrapper": "a transparent UI glyph for \"{purpose}\" - render this as a monochrome SF Symbols-style in-app symbol, not as an app launcher tile"
+  },
+  "forbidden_artifacts": [
+    "Do not produce app launcher icons, Home Screen tiles, rounded-square backgrounds, badges, app-store artwork, or full-colour brand illustrations.",
+    "Do not include text, labels, captions, watermarks, signatures, UI chrome, screenshots, or multiple panels.",
+    "Do not draw complex scenes, photorealistic objects, heavy gradients, soft drop shadows, or glossy 3D effects.",
+    "Do not use the chroma-key colour or chroma-adjacent colours in the glyph."
+  ],
+  "state_requirements": {},
+  "chroma_key": {
+    "selection": "auto",
+    "candidates": [
+      {"name": "magenta", "hex": "#FF00FF"},
+      {"name": "cyan",    "hex": "#00FFFF"},
+      {"name": "yellow",  "hex": "#FFFF00"}
+    ]
+  }
+}

@@ -6,7 +6,7 @@ where component separation cannot be relied on (soft-edged painterly art).
 
 from __future__ import annotations
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from ..extractor import register
 from ..profiles import AtlasProfile, ExtractorProfile, StateSpec
@@ -24,6 +24,7 @@ def extract(
 ) -> tuple[list[Image.Image], str]:
     cell_width = atlas.geometry.cell_width
     cell_height = atlas.geometry.cell_height
+    preserve_full_bleed = bool(extractor.params.get("preserve_full_bleed", False))
     rgba = strip.convert("RGBA")
     slot_width = rgba.width / state.frames
     frames = []
@@ -31,5 +32,15 @@ def extract(
         left = round(index * slot_width)
         right = round((index + 1) * slot_width)
         crop = rgba.crop((left, 0, right, rgba.height))
-        frames.append(fit_to_cell(crop, cell_width, cell_height))
+        if preserve_full_bleed:
+            frames.append(
+                ImageOps.fit(
+                    crop,
+                    (cell_width, cell_height),
+                    method=Image.Resampling.LANCZOS,
+                    centering=(0.5, 0.5),
+                )
+            )
+        else:
+            frames.append(fit_to_cell(crop, cell_width, cell_height))
     return frames, "slots"
