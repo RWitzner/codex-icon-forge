@@ -8,6 +8,9 @@ Subcommands:
     prepare                Build a run folder + prompts + imagegen-jobs manifest.
     status                 Report ready/pending jobs in a run.
     record                 Ingest a generated image as a job's decoded output.
+    approve                Approve one or more recorded outputs.
+    reject                 Reject one output and reopen it for generation.
+    resume                 Report the next persisted workflow action.
     extract                Run the bundle's extractor over decoded strips.
     derive                 Apply a derivation rule (rare for icon bundles).
     finalize               Compose + validate + package an existing frames root.
@@ -40,10 +43,13 @@ from engine.orchestrate import FinalizeOptions, finalize_run  # noqa: E402
 from engine.request_manifest import read_request  # noqa: E402
 from engine.run_setup import (  # noqa: E402
     PrepareOptions,
+    approve_results,
     default_output_dir,
     derive_mirror,
     prepare_run,
     record_result,
+    reject_result,
+    resume_run,
 )
 from PIL import Image  # noqa: E402
 
@@ -161,6 +167,7 @@ def _status(args: argparse.Namespace) -> int:
             "complete": len(complete),
             "ready": len(ready),
         },
+        "approval_gate_job_id": manifest.approval_gate_job_id,
         "ready_jobs": [
             {
                 "id": job.id,
@@ -170,13 +177,27 @@ def _status(args: argparse.Namespace) -> int:
                 "input_images": [item.to_dict() for item in job.input_images],
                 "depends_on": job.depends_on,
                 "mirror_policy": job.mirror_policy,
+                "review_status": job.review_status,
             }
             for job in ready
         ],
         "blocked_jobs": [
-            {"id": job.id, "depends_on": job.depends_on}
+            {
+                "id": job.id,
+                "depends_on": job.depends_on,
+                "review_status": job.review_status,
+            }
             for job in pending
             if job not in ready
+        ],
+        "review_jobs": [
+            {
+                "id": job.id,
+                "review_status": job.review_status,
+                "reviewed_at": job.reviewed_at,
+                "review_note": job.review_note,
+            }
+            for job in complete
         ],
     }
     print(json.dumps(summary, indent=2))
@@ -195,9 +216,36 @@ def _record(args: argparse.Namespace) -> int:
     return 0
 
 
+def _approve(args: argparse.Namespace) -> int:
+    result = approve_results(
+        Path(args.run_dir).resolve(),
+        job_ids=list(args.job_id or []),
+        approve_all=bool(args.approve_all),
+        note=args.note,
+    )
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def _reject(args: argparse.Namespace) -> int:
+    result = reject_result(
+        Path(args.run_dir).resolve(),
+        args.job_id,
+        args.note,
+    )
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def _resume(args: argparse.Namespace) -> int:
+    print(json.dumps(resume_run(Path(args.run_dir).resolve()), indent=2))
+    return 0
+
+
 def _extract(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
     bundle = load_bundle_for_run(run_dir)
+    manifest = load_manifest(run_dir)
     request = read_request(run_dir)
     chroma_hex = request["chroma_key"]["hex"]
     chroma_rgb = parse_hex_color(chroma_hex)
@@ -207,7 +255,24 @@ def _extract(args: argparse.Namespace) -> int:
         states = list(bundle.atlas.states)
     else:
         wanted = {item.strip() for item in states_arg.split(",") if item.strip()}
+        unknown = sorted(wanted - set(bundle.atlas.state_ids))
+        if unknown:
+            raise SystemExit("unknown state id(s): " + ", ".join(unknown))
         states = [state for state in bundle.atlas.states if state.id in wanted]
+
+    unapproved = [
+        state.id
+        for state in states
+        if (
+            manifest.job(state.id).status != "complete"
+            or manifest.job(state.id).review_status != "approved"
+        )
+    ]
+    if unapproved:
+        raise SystemExit(
+            "cannot extract state(s) that are not approved: "
+            + ", ".join(unapproved)
+        )
 
     frames_root = run_dir / "frames"
     frames_root.mkdir(parents=True, exist_ok=True)
@@ -344,6 +409,31 @@ def main() -> int:
         help=argparse.SUPPRESS,
     )
 
+    approve = sub.add_parser("approve", help="approve recorded visual results")
+    approve.add_argument("--run-dir", required=True)
+    approval_target = approve.add_mutually_exclusive_group(required=True)
+    approval_target.add_argument(
+        "--job-id",
+        action="append",
+        default=[],
+        help="Recorded job id to approve; repeatable.",
+    )
+    approval_target.add_argument(
+        "--all",
+        dest="approve_all",
+        action="store_true",
+        help="Approve every currently recorded result.",
+    )
+    approve.add_argument("--note", default="", help="Optional review note.")
+
+    reject = sub.add_parser("reject", help="reject a result and reopen generation")
+    reject.add_argument("--run-dir", required=True)
+    reject.add_argument("--job-id", required=True)
+    reject.add_argument("--note", required=True, help="Reason for rejection.")
+
+    resume = sub.add_parser("resume", help="show the next persisted workflow action")
+    resume.add_argument("--run-dir", required=True)
+
     extract = sub.add_parser("extract", help="run extractor strategy over decoded strips")
     extract.add_argument("--run-dir", required=True)
     extract.add_argument("--states", default="all", help='Comma-separated state ids or "all".')
@@ -370,6 +460,9 @@ def main() -> int:
         "prepare": _prepare,
         "status": _status,
         "record": _record,
+        "approve": _approve,
+        "reject": _reject,
+        "resume": _resume,
         "extract": _extract,
         "derive": _derive,
         "finalize": _finalize,

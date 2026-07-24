@@ -26,6 +26,7 @@ from engine import VariantSpec, load_bundle, load_bundle_for_run  # noqa: E402
 from engine.profiles import ProfileError, materialize_dynamic_atlas  # noqa: E402
 from engine.run_setup import (  # noqa: E402
     PrepareOptions,
+    approve_results,
     default_output_dir,
     prepare_run,
     record_result,
@@ -87,8 +88,7 @@ class RunSetupSlackStickersTests(unittest.TestCase):
                 self.assertEqual(job["mirror_policy"], {})
 
             ready = result["ready_jobs"]
-            expected_ids = {variant.id for variant in _DEV_PACK_VARIANTS}
-            self.assertEqual(set(ready), expected_ids)
+            self.assertEqual(ready, [_DEV_PACK_VARIANTS[0].id])
 
             self.assertFalse((run_dir / "references" / "layout-guides").exists())
 
@@ -195,7 +195,7 @@ class CliEndToEndTests(unittest.TestCase):
                 args.extend(["--variant", f"{variant.id}:{variant.purpose}"])
             result = self._run_cli(*args)
             self.assertTrue(result["ok"])
-            self.assertEqual(len(result["ready_jobs"]), 12)
+            self.assertEqual(result["ready_jobs"], [_DEV_PACK_VARIANTS[0].id])
 
 
 class ConcurrentRecordTests(unittest.TestCase):
@@ -236,7 +236,17 @@ class ConcurrentRecordTests(unittest.TestCase):
                 Image.new("RGBA", (128, 128), (200, 50, 50, 255)).save(src)
                 sources[job_id] = src
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+            gate_job = jobs[0]
+            record_result(
+                run_dir,
+                gate_job,
+                sources[gate_job],
+                allow_synthetic_test_source=True,
+            )
+            approve_results(run_dir, job_ids=[gate_job], note="Concurrency gate.")
+
+            fanout_jobs = jobs[1:]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(fanout_jobs)) as pool:
                 futures = [
                     pool.submit(
                         record_result,
@@ -245,11 +255,11 @@ class ConcurrentRecordTests(unittest.TestCase):
                         sources[job_id],
                         allow_synthetic_test_source=True,
                     )
-                    for job_id in jobs
+                    for job_id in fanout_jobs
                 ]
                 results = [future.result() for future in futures]
 
-            self.assertEqual(len(results), len(jobs))
+            self.assertEqual(len(results), len(fanout_jobs))
             self.assertTrue(all(r["ok"] for r in results))
 
             from engine.manifest import load_manifest
@@ -528,7 +538,7 @@ class DynamicVariantPrepareTests(unittest.TestCase):
             )
             result = prepare_run(options)
             self.assertTrue(result["ok"])
-            self.assertEqual(set(result["ready_jobs"]), {"main", "share-ext"})
+            self.assertEqual(result["ready_jobs"], ["main"])
 
             request = json.loads(
                 (run_dir / "request.json").read_text(encoding="utf-8")
@@ -634,7 +644,7 @@ class DynamicVariantCliTests(unittest.TestCase):
             )
             payload = json.loads(result.stdout)
             self.assertTrue(payload["ok"])
-            self.assertEqual(set(payload["ready_jobs"]), {"main", "share-ext"})
+            self.assertEqual(payload["ready_jobs"], ["main"])
 
     def test_prepare_rejects_malformed_variant_arg(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -181,6 +181,18 @@ def _make_jobs(
     return jobs
 
 
+def _approval_gate_job_id(jobs: list[Job]) -> str | None:
+    if len(jobs) <= 1:
+        return None
+    non_base_ids = {job.id for job in jobs if job.kind != "base"}
+    for job in jobs:
+        if job.kind == "base":
+            continue
+        if not any(dependency in non_base_ids for dependency in job.depends_on):
+            return job.id
+    return next((job.id for job in jobs if job.kind != "base"), None)
+
+
 def prepare_run(options: PrepareOptions) -> dict[str, Any]:
     bundle = options.bundle
     if bundle.atlas.is_dynamic:
@@ -308,6 +320,7 @@ def prepare_run(options: PrepareOptions) -> dict[str, Any]:
         run_dir=str(run_dir),
         jobs=jobs,
         created_at=now_iso(),
+        approval_gate_job_id=_approval_gate_job_id(jobs),
     )
     manifest_path = manifest.save(run_dir)
 
@@ -432,10 +445,23 @@ def record_result(
         job = manifest.job(job_id)
         validate_required_grounding(job, run_dir)
         target = run_dir / job.output_path
-        if target.exists() and not force:
+        if target.exists() and not force and job.review_status != "rejected":
             raise FileExistsError(
                 f"job {job_id!r} already has a recorded output at {target}; "
                 "pass force=True to replace it"
+            )
+        ready_job_ids = {item.id for item in manifest.ready_jobs()}
+        workflow_allows_generation = manifest.generation_allowed(job)
+        is_force_rerecord = (
+            force
+            and job.status == "complete"
+            and target.is_file()
+            and workflow_allows_generation
+        )
+        if job_id not in ready_job_ids and not is_force_rerecord:
+            raise ValueError(
+                f"job {job_id!r} is not ready; current ready jobs: "
+                f"{sorted(ready_job_ids)}"
             )
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
@@ -450,6 +476,7 @@ def record_result(
         job.status = "complete"
         job.source = str(source)
         job.recorded_at = now_iso()
+        job.review_status = "pending"
         manifest.save(run_dir)
 
         return {
@@ -460,6 +487,193 @@ def record_result(
             "source_provenance": source_provenance,
             "next_ready_jobs": [j.id for j in manifest.ready_jobs()],
         }
+    finally:
+        release_manifest_lock(lock)
+
+
+def _resume_summary(manifest: ImagegenManifest) -> dict[str, Any]:
+    ready_jobs = [job.id for job in manifest.ready_jobs()]
+    pending_review_jobs = [
+        job.id
+        for job in manifest.jobs
+        if job.status == "complete" and job.review_status == "pending"
+    ]
+    rejected_jobs = [
+        job.id for job in manifest.jobs if job.review_status == "rejected"
+    ]
+    approved_jobs = [
+        job.id
+        for job in manifest.jobs
+        if job.status == "complete" and job.review_status == "approved"
+    ]
+    not_recorded_jobs = [
+        job.id
+        for job in manifest.jobs
+        if job.status == "pending" and job.review_status == "not-recorded"
+    ]
+    blocked_jobs = [
+        job.id
+        for job in manifest.jobs
+        if job.status == "pending" and job.id not in ready_jobs
+    ]
+
+    if rejected_jobs:
+        next_action = "regenerate"
+    elif pending_review_jobs:
+        next_action = "review"
+    elif ready_jobs:
+        next_action = "generate"
+    elif len(approved_jobs) == len(manifest.jobs):
+        next_action = "extract"
+    else:
+        # A malformed or partially migrated manifest may have no immediately
+        # actionable jobs. Keep the machine-readable action in the documented
+        # vocabulary while exposing the blocked groups for diagnosis.
+        next_action = "generate"
+
+    return {
+        "ok": True,
+        "bundle": manifest.bundle,
+        "run_dir": manifest.run_dir,
+        "approval_gate_job_id": manifest.approval_gate_job_id,
+        "next_action": next_action,
+        "ready_jobs": ready_jobs,
+        "pending_review_jobs": pending_review_jobs,
+        "rejected_jobs": rejected_jobs,
+        "approved_jobs": approved_jobs,
+        "not_recorded_jobs": not_recorded_jobs,
+        "blocked_jobs": blocked_jobs,
+    }
+
+
+def resume_run(run_dir: Path) -> dict[str, Any]:
+    """Return the next durable workflow action for an existing run."""
+
+    from .manifest import load_manifest
+
+    return _resume_summary(load_manifest(run_dir.resolve()))
+
+
+def approve_results(
+    run_dir: Path,
+    job_ids: list[str] | None = None,
+    approve_all: bool = False,
+    note: str = "",
+) -> dict[str, Any]:
+    """Approve one or more recorded results under the manifest lock."""
+
+    from .manifest import acquire_manifest_lock, load_manifest, release_manifest_lock
+
+    if approve_all and job_ids:
+        raise ValueError("choose either job_ids or approve_all, not both")
+    if not approve_all and not job_ids:
+        raise ValueError("provide at least one job id or set approve_all=True")
+
+    run_dir = run_dir.resolve()
+    lock = acquire_manifest_lock(run_dir)
+    try:
+        manifest = load_manifest(run_dir)
+        if approve_all:
+            selected = [job for job in manifest.jobs if job.status == "complete"]
+            if not selected:
+                raise ValueError("no recorded results are available to approve")
+        else:
+            assert job_ids is not None
+            if len(set(job_ids)) != len(job_ids):
+                raise ValueError("job_ids contains duplicates")
+            selected = [manifest.job(job_id) for job_id in job_ids]
+
+        unavailable = [job.id for job in selected if job.status != "complete"]
+        if unavailable:
+            raise ValueError(
+                "cannot approve jobs without recorded results: "
+                + ", ".join(unavailable)
+            )
+
+        reviewed_at = now_iso()
+        review_note = note.strip()
+        newly_approved_jobs = [
+            job.id for job in selected if job.review_status != "approved"
+        ]
+        for job in selected:
+            job.review_status = "approved"
+            job.reviewed_at = reviewed_at
+            job.review_note = review_note
+        manifest.save(run_dir)
+        summary = _resume_summary(manifest)
+        summary["newly_approved_jobs"] = newly_approved_jobs
+        return summary
+    finally:
+        release_manifest_lock(lock)
+
+
+def reject_result(run_dir: Path, job_id: str, note: str) -> dict[str, Any]:
+    """Reject a recorded result and make that job generation-ready again."""
+
+    from .manifest import acquire_manifest_lock, load_manifest, release_manifest_lock
+
+    review_note = note.strip()
+    if not review_note:
+        raise ValueError("rejection note must not be empty")
+
+    run_dir = run_dir.resolve()
+    lock = acquire_manifest_lock(run_dir)
+    try:
+        manifest = load_manifest(run_dir)
+        job = manifest.job(job_id)
+        if job.status != "complete":
+            raise ValueError(
+                f"cannot reject job {job_id!r} without a recorded result"
+            )
+
+        affected_ids: set[str] = set()
+        pending_dependencies = [job_id]
+        while pending_dependencies:
+            dependency_id = pending_dependencies.pop(0)
+            for candidate in manifest.jobs:
+                if candidate.id in affected_ids or candidate.id == job_id:
+                    continue
+                if dependency_id in candidate.depends_on:
+                    affected_ids.add(candidate.id)
+                    pending_dependencies.append(candidate.id)
+
+        if job_id == manifest.approval_gate_job_id:
+            affected_ids.update(
+                candidate.id
+                for candidate in manifest.jobs
+                if candidate.id != job_id and candidate.kind != "base"
+            )
+
+        reviewed_at = now_iso()
+        job.status = "pending"
+        job.review_status = "rejected"
+        job.reviewed_at = reviewed_at
+        job.review_note = review_note
+
+        invalidated_jobs: list[str] = []
+        for candidate in manifest.jobs:
+            if candidate.id not in affected_ids or candidate.status != "complete":
+                continue
+            candidate.status = "pending"
+            candidate.review_status = "rejected"
+            candidate.reviewed_at = reviewed_at
+            relationship = (
+                "approval gate"
+                if job_id == manifest.approval_gate_job_id
+                else "dependency"
+            )
+            candidate.review_note = (
+                f"Invalidated because {relationship} {job_id!r} was rejected: "
+                f"{review_note} Regenerate through the affected workflow after "
+                f"{job_id!r} is approved."
+            )
+            invalidated_jobs.append(candidate.id)
+
+        manifest.save(run_dir)
+        summary = _resume_summary(manifest)
+        summary["rejected_job"] = job_id
+        summary["invalidated_jobs"] = invalidated_jobs
+        return summary
     finally:
         release_manifest_lock(lock)
 
@@ -485,14 +699,21 @@ def derive_mirror(run_dir: Path, target_state: str, decision_note: str) -> dict[
 
     lock = acquire_manifest_lock(run_dir)
     try:
+        manifest = load_manifest(run_dir)
+        job = manifest.job(target_state)
+        ready_job_ids = {item.id for item in manifest.ready_jobs()}
+        if target_state not in ready_job_ids:
+            raise ValueError(
+                f"job {target_state!r} is not ready; current ready jobs: "
+                f"{sorted(ready_job_ids)}"
+            )
         with Image.open(source_decoded) as opened:
             mirrored = opened.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
             mirrored.save(target_decoded)
-        manifest = load_manifest(run_dir)
-        job = manifest.job(target_state)
         job.status = "complete"
         job.source = f"derived:{derivation.method}:{derivation.source}"
         job.recorded_at = now_iso()
+        job.review_status = "pending"
         job.mirror_policy = dict(job.mirror_policy)
         job.mirror_policy["applied"] = True
         job.mirror_policy["decision_note"] = decision_note

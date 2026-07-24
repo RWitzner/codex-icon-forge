@@ -102,7 +102,7 @@ Either way the underlying engine is identical.
 
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/examples-dark.png"><img src="assets/sections/examples.png" width="32" align="absmiddle"></picture> Examples
 
-Three real runs through the pipeline, spanning two bundles and two completely different visual languages. Same `prepare → status → record → extract → finalize` flow every time.
+Three real runs through the pipeline, spanning two bundles and two completely different visual languages. Same `prepare → status → record → approve → extract → finalize` flow every time.
 
 ### `slack-stickers` - flat-vector cartoon
 
@@ -189,7 +189,7 @@ Five stages, each owned by the parent agent. Subagents only call `$imagegen` and
 
 <div align="center">
 
-[![pipeline - prepare → status → record → extract → finalize][image-pipeline]][repo-link]
+[![pipeline - prepare → status → record → approve → extract → finalize][image-pipeline]][repo-link]
 
 </div>
 
@@ -226,21 +226,38 @@ RUN=$(python "$SKILL_DIR/scripts/icon_forge.py" prepare \
 # 2. Inspect ready jobs and the prompts to use.
 python "$SKILL_DIR/scripts/icon_forge.py" status --run-dir "$RUN"
 
-# 3. (Codex fans out subagents to call $imagegen for each ready job.)
+# 3. Generate the first ready job with $imagegen. Multi-job runs expose one
+#    representative gate job first; the remaining jobs stay blocked.
 
 # 4. Record each generated image. Concurrency-safe; parent runs this serially
 #    or in parallel - a sibling lock file keeps manifest writes atomic.
 #    The source MUST be a real $imagegen output: $CODEX_HOME/generated_images/.../ig_*.png.
-#    Locally drawn or post-processed images are rejected. Use --force to replace
-#    an already-recorded job (e.g. after a regenerate).
+#    Locally drawn or post-processed images are rejected. A rejected job can be
+#    recorded again directly; use --force only for a deliberate re-record that
+#    did not pass through `reject`. Force never bypasses gates or dependencies.
 python "$SKILL_DIR/scripts/icon_forge.py" record \
   --run-dir "$RUN" --job-id shipping-it \
   --source "$CODEX_HOME/generated_images/.../ig_abc123.png"
 
-# 5. Extract frames from decoded strips (chroma-key strip + cell crop).
+# 5. Review and approve the representative result. `status` now exposes the
+#    remaining jobs for generation. Record those outputs, then approve them
+#    together (or approve/reject them individually).
+python "$SKILL_DIR/scripts/icon_forge.py" approve \
+  --run-dir "$RUN" --job-id shipping-it \
+  --note "Style and intent approved"
+
+# ...generate + record every newly ready job...
+python "$SKILL_DIR/scripts/icon_forge.py" approve \
+  --run-dir "$RUN" --all \
+  --note "Final recorded set approved"
+
+# At any point, ask the persisted state machine what to do next.
+python "$SKILL_DIR/scripts/icon_forge.py" resume --run-dir "$RUN"
+
+# 6. Extract approved frames from decoded strips (chroma-key strip + cell crop).
 python "$SKILL_DIR/scripts/icon_forge.py" extract --run-dir "$RUN" --states all
 
-# 6. Compose atlas, validate, and package to the bundle's output layout.
+# 7. Compose atlas, validate, and package to the bundle's output layout.
 python "$SKILL_DIR/scripts/icon_forge.py" finalize \
   --bundle slack-stickers \
   --frames "$RUN/frames" \
@@ -301,7 +318,7 @@ python "$SKILL_DIR/scripts/icon_forge.py" prepare \
   --variant "watch:1-bit silhouette for watchOS"
 ```
 
-Each variant becomes its own `$imagegen` job - fan them out to subagents in parallel just like sticker generation. The rest of the workflow (`status`, `record`, `extract`, `finalize`) is identical; the bundle reloads its variants from `request.json` automatically.
+Each variant becomes its own `$imagegen` job. The first variant is a persisted approval gate; after it is recorded and approved, fan the remaining ready jobs out to subagents. The rest of the workflow (`status`, `record`, `approve`, `extract`, `finalize`) is identical; the bundle reloads its variants from `request.json` automatically.
 
 </details>
 
@@ -339,11 +356,12 @@ See [`references/profile-schema.md`](references/profile-schema.md) for the canon
 
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/safety-dark.png"><img src="assets/sections/safety.png" width="32" align="absmiddle"></picture> Safety guarantees
 
-The parent agent owns all writes into the run directory. Subagents only generate images and return paths; the parent calls `record`, `extract`, `derive`, and `finalize`. Three programmatic guards back this contract:
+The parent agent owns all writes into the run directory. Subagents only generate images and return paths; the parent calls `record`, `approve`, `reject`, `extract`, `derive`, and `finalize`. Four programmatic guards back this contract:
 
 - **Concurrency.** `record` and `derive` serialise their manifest read-modify-write under a sibling lock file (`imagegen-jobs.json.lock`). Parallel record calls from a fan-out cannot drop status updates. Manifest writes use a unique tmp filename + `os.replace` so concurrent writers cannot collide on the tmp path either.
+- **Persisted approval gate.** A multi-job run exposes only its first representative job until that result is approved. Jobs whose dependencies are not approved cannot be recorded, and `extract` refuses every selected output whose review state is not `approved`. Rejecting a gate or dependency invalidates already-recorded affected outputs so stale fan-out cannot later be extracted. `resume` reports whether the next action is `generate`, `review`, `regenerate`, or `extract`.
 - **Provenance.** `record` rejects any source path that is not `$CODEX_HOME/generated_images/.../ig_*.png`, and any path inside the run directory itself. Locally drawn or post-processed images cannot be ingested as visual job outputs. The hidden `--allow-synthetic-test-source` flag bypasses the check for unit tests only - never use it in real runs.
-- **Overwrite guard.** `record` refuses to replace a job's existing decoded output unless `--force` is passed. A stale subagent result, a double-record bug, or a parallel race cannot silently overwrite an already-approved image. Re-recording after an explicit regenerate is one flag away.
+- **Overwrite guard.** `record` refuses to replace a job's existing decoded output unless `--force` is passed or the persisted review state is `rejected`. A stale subagent result, a double-record bug, or a parallel race cannot silently overwrite an approved image.
 
 > [!IMPORTANT]
 > The provenance check is the difference between a trustworthy run folder and a polluted one. Never use `--allow-synthetic-test-source` outside of unit tests - it exists solely so the test suite can fabricate inputs without touching `$imagegen`.

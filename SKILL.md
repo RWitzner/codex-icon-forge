@@ -1,6 +1,6 @@
 ---
 name: icon-forge
-description: Generate icon packs and sticker packs for Slack, Discord, app stores, web favicons, and social platforms. AI image generation drives concept-to-packaged-output through configurable bundle profiles. Each bundle names an atlas geometry, a visual style, an extractor strategy, and a packager. Ships with slack-stickers (1-12 user-defined transparent emoji-sized stickers with import README; canonical dev-pack preset documented), app-icons (one design rendered at 8 platform sizes from 16x16 up to 1024x1024), and app-icon-set (1-12 distinct icon designs each at all 8 sizes). End-to-end CLI subcommands prepare, status, record, derive, extract, and finalize drive a run from concept to final files. Subagent fan-out supports parallel sticker generation while the parent agent owns recording and packaging. Use when building icon assets or sticker packs that need consistent visual style across multiple outputs.
+description: Generate icon packs and sticker packs for Slack, Discord, app stores, web favicons, and social platforms. AI image generation drives concept-to-packaged-output through configurable bundle profiles. Each bundle names an atlas geometry, a visual style, an extractor strategy, and a packager. Ships with slack-stickers (1-12 user-defined transparent emoji-sized stickers with import README; canonical dev-pack preset documented), app-icons (one design rendered at 8 platform sizes from 16x16 up to 1024x1024), and app-icon-set (1-12 distinct icon designs each at all 8 sizes). End-to-end CLI subcommands prepare, status, record, approve, reject, resume, derive, extract, and finalize drive a resumable run from concept to final files. Subagent fan-out supports parallel sticker generation while the parent agent owns recording, review decisions, and packaging. Use when building icon assets or sticker packs that need consistent visual style across multiple outputs.
 ---
 
 # Icon Forge
@@ -77,7 +77,7 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
      --reference /absolute/path/to/reference.png
    ```
 
-   Omit `--output-dir`; the script returns the chosen `run_dir` in its JSON output. Capture that path and pass it as `--run-dir` to the downstream commands (`status`, `record`, `derive`, `extract`). Pass `--output-dir <path>` only when the user named one explicitly.
+   Omit `--output-dir`; the script returns the chosen `run_dir` in its JSON output. Capture that path and pass it as `--run-dir` to the downstream commands (`status`, `record`, `approve`, `reject`, `resume`, `derive`, `extract`). Pass `--output-dir <path>` only when the user named one explicitly.
 
    Writes `request.json`, `prompts/`, `references/`, and `imagegen-jobs.json` listing every visual job with dependencies and input images.
 
@@ -91,9 +91,9 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
    python "$SKILL_DIR/scripts/icon_forge.py" status --run-dir "$RUN_DIR"
    ```
 
-3. **Generate** each ready job through `$imagegen`. For atlases with `requires_base: true`, the base job runs first as the canonical identity reference. For all atlases (whether they declare a base or not), the remaining state jobs run **in sequence**: generate the first state job, pause at the first-result approval gate (below), then fan out the rest. Each row job must attach its listed input images.
+3. **Generate** only the jobs returned by `status` through `$imagegen`. For atlases with `requires_base: true`, the base job runs first as the canonical identity reference and must be recorded and approved before its dependent state can become ready. For all atlases, generate the first state job, record it, approve it, then fan out the remaining ready states. Each row job must attach its listed input images.
 
-   **First-result approval gate (multi-job bundles only).** After recording the first job in a multi-job bundle (e.g. the first variant in `app-icon-set`, or the first sticker in `slack-stickers`), **stop and show the user the `decoded_path` returned by `record`** (e.g. `decoded/main.png`). Wait for an explicit `approve` before generating remaining jobs. Catching style or intent errors at job 1 of N is far cheaper than discovering them after job N of N. Single-job bundles like `app-icons` are no-ops. On `regenerate`, re-run the same job and re-record with `--force`. On `abort`, leave the run dir as-is for inspection.
+   **First-result approval gate (multi-job bundles only).** After recording the first state in a multi-job bundle (e.g. the first variant in `app-icon-set`, or the first sticker in `slack-stickers`), **stop and show the user the `decoded_path` returned by `record`** (e.g. `decoded/main.png`). Persist the user's decision with `approve` or `reject`; the remaining jobs cannot be recorded until the gate is approved. Catching style or intent errors at job 1 of N is far cheaper than discovering them after job N of N. Single-job bundles do not block a fan-out, but their result still requires approval before extraction. On rejection, regenerate the now-ready job and record it again. On abort, leave the run dir as-is for inspection.
 
 4. **Record** each completed generation.
 
@@ -106,7 +106,37 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 
    For base jobs (atlases that declare `requires_base: true`; none of the three shipped bundles do, but external bundles may) this also writes `references/canonical-base.png` so subsequent row jobs use it as identity reference. The record step is concurrency-safe: a sibling lock file serialises parallel calls so no manifest update is dropped.
 
-5. **Derive** any mirror states (rare for icon bundles; common for animated sprites).
+5. **Persist review decisions.** Every recorded or derived result enters `pending` review. Approve the first gate result before generation fans out, then approve or reject each later result before extraction.
+
+   ```bash
+   python "$SKILL_DIR/scripts/icon_forge.py" approve \
+     --run-dir "$RUN_DIR" \
+     --job-id <id> \
+     --note "<review decision>"
+
+   # Or approve all currently recorded results after reviewing the set:
+   python "$SKILL_DIR/scripts/icon_forge.py" approve \
+     --run-dir "$RUN_DIR" \
+     --all \
+     --note "<review decision>"
+
+   # Rejection preserves note/provenance and reopens the job. Recorded
+   # dependents (or all fanout jobs when rejecting the gate) are invalidated:
+   python "$SKILL_DIR/scripts/icon_forge.py" reject \
+     --run-dir "$RUN_DIR" \
+     --job-id <id> \
+     --note "<specific correction needed>"
+   ```
+
+   Use the persisted state instead of reconstructing progress from memory:
+
+   ```bash
+   python "$SKILL_DIR/scripts/icon_forge.py" resume --run-dir "$RUN_DIR"
+   ```
+
+   `next_action` is one of `generate`, `review`, `regenerate`, or `extract`, with grouped job IDs.
+
+6. **Derive** any mirror states (rare for icon bundles; common for animated sprites).
 
    ```bash
    python "$SKILL_DIR/scripts/icon_forge.py" derive \
@@ -115,7 +145,7 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
      --decision-note "<why mirroring preserves identity>"
    ```
 
-6. **Extract** decoded strips into per-state frame directories.
+7. **Extract** approved decoded strips into per-state frame directories. Unknown state IDs and unapproved outputs are rejected.
 
    ```bash
    python "$SKILL_DIR/scripts/icon_forge.py" extract \
@@ -123,7 +153,7 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
      --states all
    ```
 
-7. **Finalize** — compose, validate, package.
+8. **Finalize** — compose, validate, package.
 
    ```bash
    python "$SKILL_DIR/scripts/icon_forge.py" finalize \
@@ -154,11 +184,19 @@ Default flow:
    > Reply: `approve` to continue · `regenerate` to retry this job · `abort` to stop.
    > ```
 
-   Only proceed after `approve`. On `regenerate`, re-record the job with `--force`. On `abort`, leave the run dir as-is for inspection. Single-job bundles like `app-icons` skip this step.
+   Persist `approve` with:
+
+   ```bash
+   python "$SKILL_DIR/scripts/icon_forge.py" approve \
+     --run-dir "$RUN_DIR" --job-id <state-id> \
+     --note "<why it is approved>"
+   ```
+
+   Persist `regenerate` with `reject --job-id <state-id> --note "<correction>"`, then regenerate and record that now-ready job. On `abort`, leave the run dir as-is for inspection. Single-job bundles skip the fan-out gate but still require approval before extraction.
 4. Parent spawns subagents for the remaining ready jobs (the N-1 jobs left after the first-result approval).
 5. Each subagent generates one image with `$imagegen` and returns only the selected source path.
 6. Parent runs `record` for each returned source. The lock file makes parallel record calls safe.
-7. Parent runs `derive`, `extract`, and `finalize`.
+7. Parent presents the recorded set, persists final decisions with `approve --all` or per-job `approve`/`reject`, then runs `derive`, `extract`, and `finalize`.
 
 **MANDATORY parallelism question for 8+ parallel-eligible jobs.** When *any* bundle runs with 8 or more parallel-eligible jobs (e.g. `slack-stickers` with 8+ stickers, or `app-icon-set` with 8+ variants), **after the first-result approval and before generating job 2 of N, halt and ask the user explicitly** whether to fan out to 2 subagents or run sequentially. Do not autonomously decide — neither default to fan-out nor fall back to sequential without an explicit answer.
 
@@ -174,11 +212,13 @@ Only proceed after the answer. If the user replies `parallel` but subagent spawn
 
 Batching is allowed: for an 8-job run, two subagents × 4 jobs; for 12, two × 6. Per-image quality is independent across jobs, so batching carries no quality cost; the manifest lock guarantees parallel record safety; sequential generation is NOT required for provenance. Smaller multi-job runs (any bundle with <8 parallel-eligible jobs) may run sequentially without flagging.
 
-Subagent write boundary: subagents must not edit `imagegen-jobs.json`, copy files into `decoded/`, run `record`, run `derive`, run `extract`, or run `finalize`. This avoids manifest races and keeps provenance checks centralised.
+Subagent write boundary: subagents must not edit `imagegen-jobs.json`, copy files into `decoded/`, run `record`, run `approve`, run `reject`, run `derive`, run `extract`, or run `finalize`. This avoids manifest races and keeps provenance checks centralised.
 
 Provenance enforcement: `record` rejects any source path that is not `$CODEX_HOME/generated_images/.../ig_*.png`, and any path that lives inside the run directory itself. Locally drawn or post-processed images cannot be ingested as visual job outputs. The hidden `--allow-synthetic-test-source` flag bypasses the check for unit tests only — never use it in real runs.
 
-Overwrite guard: `record` refuses to replace a job's existing decoded output unless `--force` is passed. This prevents a stale subagent result, a double-record bug, or a parallel race from silently overwriting an already-approved image. Re-recording after an explicit regenerate is a one-flag operation.
+Workflow enforcement: `record` accepts only workflow-eligible jobs. Dependencies must be approved, the first multi-job result gates fan-out, and `extract` accepts only approved states. `--force` can replace an eligible completed job's file, but never bypasses a rejected gate or dependency.
+
+Overwrite guard: `record` refuses to replace a job's existing decoded output unless `--force` is passed or the job was explicitly rejected. This prevents a stale subagent result, a double-record bug, or a parallel race from silently overwriting an approved image.
 
 Subagent handoff template (drop in the row id, prompt path, and input image list from `imagegen-jobs.json`):
 
@@ -246,7 +286,7 @@ python "${SKILL_DIR}/scripts/icon_forge.py" prepare \
   --variant "next-meeting:calendar page with a single bookmark"
 ```
 
-The rest of the workflow (`status`, `record`, `extract`, `finalize`) is identical to the other bundles. Variant IDs are persisted in `request.json`, so downstream commands reload the materialised atlas automatically.
+The rest of the workflow (`status`, `record`, `approve`, `extract`, `finalize`) is identical to the other bundles. Variant IDs are persisted in `request.json`, so downstream commands reload the materialised atlas automatically.
 
 ## Dynamic icon families (`app-icon-set`)
 
@@ -281,7 +321,7 @@ Variant ID rules (validated at prepare time):
 - IDs must be unique within the run
 - Purpose is required and at most 200 chars
 
-The rest of the workflow is identical to other bundles: parent generates each variant via `$imagegen` (or fans them out to subagents), parent records each result with `record`, then `extract` and `finalize`. The packager writes `${ICON_FORGE_HOME}/app-icon-sets/<entity-id>/<variant>/<variant>-<size>.png` for every (variant, size) pair plus a family README.
+The rest of the workflow is identical to other bundles: parent generates each variant via `$imagegen` (or fans them out to subagents), records each result with `record`, persists review decisions with `approve`/`reject`, then runs `extract` and `finalize`. The packager writes `${ICON_FORGE_HOME}/app-icon-sets/<entity-id>/<variant>/<variant>-<size>.png` for every (variant, size) pair plus a family README.
 
 For a single icon at all sizes, use the simpler `app-icons` bundle — `app-icon-set` is overkill for one design.
 

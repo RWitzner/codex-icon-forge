@@ -18,7 +18,10 @@ from typing import Any
 
 MANIFEST_FILENAME = "imagegen-jobs.json"
 LOCK_FILENAME = "imagegen-jobs.json.lock"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+REVIEW_STATUSES = frozenset(
+    {"not-recorded", "pending", "approved", "rejected"}
+)
 
 
 def acquire_manifest_lock(run_dir: Path, timeout: float = 30.0):
@@ -85,6 +88,9 @@ class Job:
     recording_owner: str = "parent"
     source: str | None = None
     recorded_at: str | None = None
+    review_status: str = "not-recorded"
+    reviewed_at: str | None = None
+    review_note: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -102,11 +108,16 @@ class Job:
             "parallelizable_after": list(self.parallelizable_after),
             "mirror_policy": dict(self.mirror_policy),
             "recording_owner": self.recording_owner,
+            "review_status": self.review_status,
         }
         if self.source is not None:
             data["source"] = self.source
         if self.recorded_at is not None:
             data["recorded_at"] = self.recorded_at
+        if self.reviewed_at is not None:
+            data["reviewed_at"] = self.reviewed_at
+        if self.review_note is not None:
+            data["review_note"] = self.review_note
         return data
 
 
@@ -118,9 +129,10 @@ class ImagegenManifest:
     created_at: str
     schema_version: int = SCHEMA_VERSION
     primary_generation_skill: str = "$imagegen"
+    approval_gate_job_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "schema_version": self.schema_version,
             "bundle": self.bundle,
             "run_dir": self.run_dir,
@@ -128,6 +140,9 @@ class ImagegenManifest:
             "created_at": self.created_at,
             "jobs": [job.to_dict() for job in self.jobs],
         }
+        if self.approval_gate_job_id is not None:
+            data["approval_gate_job_id"] = self.approval_gate_job_id
+        return data
 
     def job(self, job_id: str) -> Job:
         for job in self.jobs:
@@ -135,15 +150,43 @@ class ImagegenManifest:
                 return job
         raise KeyError(job_id)
 
-    def ready_jobs(self) -> list[Job]:
-        completed = {job.id for job in self.jobs if job.status == "complete"}
-        ready: list[Job] = []
-        for job in self.jobs:
-            if job.status != "pending":
+    def _gate_generation_ids(self) -> set[str] | None:
+        gate_id = self.approval_gate_job_id
+        if gate_id is None:
+            return None
+        gate = self.job(gate_id)
+        if gate.status == "complete" and gate.review_status == "approved":
+            return None
+
+        prerequisite_ids: set[str] = set()
+        pending = list(gate.depends_on)
+        while pending:
+            dependency_id = pending.pop()
+            if dependency_id in prerequisite_ids:
                 continue
-            if all(dep in completed for dep in job.depends_on):
-                ready.append(job)
-        return ready
+            prerequisite_ids.add(dependency_id)
+            pending.extend(self.job(dependency_id).depends_on)
+        return prerequisite_ids | {gate_id}
+
+    def generation_allowed(self, job: Job) -> bool:
+        """Whether workflow gates and dependencies allow generating ``job``."""
+
+        approved = {
+            item.id
+            for item in self.jobs
+            if item.status == "complete" and item.review_status == "approved"
+        }
+        if not all(dependency in approved for dependency in job.depends_on):
+            return False
+        gate_generation_ids = self._gate_generation_ids()
+        return gate_generation_ids is None or job.id in gate_generation_ids
+
+    def ready_jobs(self) -> list[Job]:
+        return [
+            job
+            for job in self.jobs
+            if job.status == "pending" and self.generation_allowed(job)
+        ]
 
     def save(self, run_dir: Path) -> Path:
         path = run_dir / MANIFEST_FILENAME
@@ -167,17 +210,36 @@ def load_manifest(run_dir: Path) -> ImagegenManifest:
     if not path.is_file():
         raise FileNotFoundError(f"no manifest at {path}")
     data = json.loads(path.read_text(encoding="utf-8"))
+    source_schema_version = int(data.get("schema_version", 1))
+    if source_schema_version > SCHEMA_VERSION:
+        raise ValueError(
+            f"manifest schema {source_schema_version} is newer than supported "
+            f"schema {SCHEMA_VERSION}"
+        )
+
     jobs: list[Job] = []
     for job_data in data.get("jobs", []):
         inputs = [
             JobInput(path=str(item["path"]), role=str(item["role"]))
             for item in job_data.get("input_images", [])
         ]
+        status = str(job_data["status"])
+        review_status = str(
+            job_data.get(
+                "review_status",
+                "approved" if status == "complete" else "not-recorded",
+            )
+        )
+        if review_status not in REVIEW_STATUSES:
+            raise ValueError(
+                f"job {job_data.get('id')!r} has invalid review_status "
+                f"{review_status!r}"
+            )
         jobs.append(
             Job(
                 id=str(job_data["id"]),
                 kind=str(job_data["kind"]),
-                status=str(job_data["status"]),
+                status=status,
                 prompt_file=str(job_data["prompt_file"]),
                 input_images=inputs,
                 output_path=str(job_data["output_path"]),
@@ -197,6 +259,9 @@ def load_manifest(run_dir: Path) -> ImagegenManifest:
                 recording_owner=str(job_data.get("recording_owner", "parent")),
                 source=job_data.get("source"),
                 recorded_at=job_data.get("recorded_at"),
+                review_status=review_status,
+                reviewed_at=job_data.get("reviewed_at"),
+                review_note=job_data.get("review_note"),
             )
         )
     return ImagegenManifest(
@@ -204,6 +269,7 @@ def load_manifest(run_dir: Path) -> ImagegenManifest:
         run_dir=str(data.get("run_dir", str(run_dir))),
         jobs=jobs,
         created_at=str(data.get("created_at", now_iso())),
-        schema_version=int(data.get("schema_version", SCHEMA_VERSION)),
+        schema_version=SCHEMA_VERSION,
         primary_generation_skill=str(data.get("primary_generation_skill", "$imagegen")),
+        approval_gate_job_id=data.get("approval_gate_job_id"),
     )
