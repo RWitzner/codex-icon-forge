@@ -1,6 +1,6 @@
 ---
 name: icon-forge
-description: Generate icon packs and sticker packs for Slack, Discord, app stores, web favicons, and social platforms. AI image generation drives concept-to-packaged-output through configurable bundle profiles. Each bundle names an atlas geometry, a visual style, an extractor strategy, and a packager. Ships with slack-stickers (1-12 user-defined transparent emoji-sized stickers with import README; canonical dev-pack preset documented), app-icons (one design rendered at 8 platform sizes from 16x16 up to 1024x1024), app-icon-set (1-12 distinct icon designs each at all 8 sizes), and web-brand-kit (one browser/PWA brand mark packaged as favicons, favicon.ico, apple-touch-icon, manifest icons, site.webmanifest, and README). End-to-end CLI subcommands prepare, status, record, review, approve, reject, resume, derive, extract, and finalize drive a resumable run from concept to final files. Subagent fan-out supports parallel sticker generation while the parent agent owns recording, QA review artifacts, review decisions, and packaging. Use when building icon assets or sticker packs that need consistent visual style across multiple outputs.
+description: Use when a user wants a consistent static icon family, Slack or Discord sticker pack, app launcher icon set, favicon set, or browser/PWA brand kit generated and packaged from one visual concept.
 ---
 
 # Icon Forge
@@ -17,7 +17,7 @@ AI-powered icon and sticker pack pipeline. Same generation engine, multiple entr
 
 ## Bundles shipped
 
-- **`slack-stickers`** — user-defined 1–12 sticker pack, each sticker rendered in a 128x128 cell. Variants are supplied at prepare time via `--variant id:purpose` (one per sticker). Output: one transparent PNG per variant plus a `README.md` with Slack import instructions. Style is `flat-vector` (bold simple shapes, thick outlines, limited palette). The canonical dev-pack preset (`shipping-it`, `tests-passing`, `merge-conflict`, …) lives in README.md as 12 ready-to-paste `--variant` strings.
+- **`slack-stickers`** — user-defined 1–12 sticker pack. Variants are supplied at prepare time via `--variant id:purpose` (one per sticker). Output: transparent 128, 256, 512, and 1024 px PNGs at `<sticker>/<sticker>-<size>.png`, plus a `README.md` with Slack import instructions. Style is `flat-vector` (bold simple shapes, thick outlines, limited palette). The canonical dev-pack preset (`shipping-it`, `tests-passing`, `merge-conflict`, …) lives in README.md as 12 ready-to-paste `--variant` strings.
 - **`app-icons`** — one icon design rendered at 8 platform sizes (16, 32, 64, 128, 180, 256, 512, 1024). Output: 8 sized PNGs plus a README mapping each size to its platform use (iOS App Store, Android Play Store, web favicon, apple-touch-icon, Slack workspace icon). Style is `launcher-tile` (full-colour app launcher tile, hardened against feature-glyph leakage, readable from 16x16).
 - **`app-icon-set`** — user-defined family of 1–12 distinct icon designs (e.g. main + share-extension + watch + notification), each rendered at all 8 platform sizes. Variants are supplied at prepare time via `--variant id:purpose` or, for style-defined semantic roles, `--variant id@role:purpose`; each variant is generated independently by its own subagent, then fan'ed out to subfolders. Output: `<entity>/<variant>/<variant>-<size>.png` plus a family README.
 - **`web-brand-kit`** — one browser/PWA brand mark rendered from a 1024x1024 source cell. Output: PNG favicons, `favicon.ico` with 16/32/48 entries, `apple-touch-icon.png`, 192/512 manifest icons, `site.webmanifest`, and a README with HTML usage.
@@ -61,7 +61,8 @@ Add more bundles by authoring profile JSONs — no engine code changes required 
 ## Default workflow (concept to packaged output)
 
 ```bash
-SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
+SKILL_DIR="$HOME/.agents/skills/icon-forge"
+PYTHON="$SKILL_DIR/.venv/bin/python"
 ```
 
 **Run location rule.** Omit `--output-dir` and the script picks `${PWD}/output/icon-forge/<entity-id>-<UTC-timestamp>` for you — i.e. the current working directory the user invoked you from. Only pass `--output-dir` when the user explicitly names a different path. Never default to `~/Downloads`, `~/Desktop`, `$CODEX_HOME`, or `/tmp`.
@@ -69,7 +70,7 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 1. **Prepare** the run folder.
 
    ```bash
-   python "$SKILL_DIR/scripts/icon_forge.py" prepare \
+   "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" prepare \
      --bundle <bundle-id> \
      --entity-id <slug> \
      --display-name "<Display Name>" \
@@ -84,13 +85,13 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
    Writes `request.json`, `prompts/`, `references/`, and `imagegen-jobs.json` listing every visual job with dependencies and input images.
 
    ```bash
-   RUN_DIR=$(python "$SKILL_DIR/scripts/icon_forge.py" prepare ... | python -c 'import json,sys; print(json.load(sys.stdin)["run_dir"])')
+   RUN_DIR=$("$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" prepare ... | "$PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["run_dir"])')
    ```
 
 2. **Inspect** ready jobs.
 
    ```bash
-   python "$SKILL_DIR/scripts/icon_forge.py" status --run-dir "$RUN_DIR"
+   "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" status --run-dir "$RUN_DIR"
    ```
 
 3. **Generate** only the jobs returned by `status` through `$imagegen`. For atlases with `requires_base: true`, the base job runs first as the canonical identity reference and must be recorded and approved before its dependent state can become ready. For all atlases, generate the first state job, record it, approve it, then fan out the remaining ready states. Each row job must attach its listed input images.
@@ -100,7 +101,7 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 4. **Record** each completed generation.
 
    ```bash
-   python "$SKILL_DIR/scripts/icon_forge.py" record \
+   "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" record \
      --run-dir "$RUN_DIR" \
      --job-id <id> \
      --source /absolute/path/to/$CODEX_HOME/generated_images/.../ig_*.png
@@ -111,27 +112,27 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 5. **Render QA artifacts and persist review decisions.** Every recorded or derived result enters `pending` review. Run `review` before approving: it writes `qa/review-sheet.png` and `qa/review.json`, validates decoded output format, proportional strip geometry, useful size, safe `decoded/` paths, the 4096x4096 decoded pixel budget, and non-blank visible content after chroma cleanup. Not-yet-recorded future jobs are shown as skipped placeholders; at least one completed visual output must exist. Review artifacts are protected from accidental overwrite; pass `--force` to regenerate them after recording more jobs.
 
    ```bash
-   python "$SKILL_DIR/scripts/icon_forge.py" review \
+   "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" review \
      --run-dir "$RUN_DIR"
    ```
 
    Approve the first gate result before generation fans out, then approve or reject each later result before extraction.
 
    ```bash
-   python "$SKILL_DIR/scripts/icon_forge.py" approve \
+   "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" approve \
      --run-dir "$RUN_DIR" \
      --job-id <id> \
      --note "<review decision>"
 
    # Or approve all currently recorded results after reviewing the set:
-   python "$SKILL_DIR/scripts/icon_forge.py" approve \
+   "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" approve \
      --run-dir "$RUN_DIR" \
      --all \
      --note "<review decision>"
 
    # Rejection preserves note/provenance and reopens the job. Recorded
    # dependents (or all fanout jobs when rejecting the gate) are invalidated:
-   python "$SKILL_DIR/scripts/icon_forge.py" reject \
+   "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" reject \
      --run-dir "$RUN_DIR" \
      --job-id <id> \
      --note "<specific correction needed>"
@@ -140,7 +141,7 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
    Use the persisted state instead of reconstructing progress from memory:
 
    ```bash
-   python "$SKILL_DIR/scripts/icon_forge.py" resume --run-dir "$RUN_DIR"
+   "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" resume --run-dir "$RUN_DIR"
    ```
 
    `next_action` is one of `generate`, `review`, `regenerate`, or `extract`, with grouped job IDs.
@@ -148,7 +149,7 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 6. **Derive** any mirror states (rare for icon bundles; common for animated sprites).
 
    ```bash
-   python "$SKILL_DIR/scripts/icon_forge.py" derive \
+   "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" derive \
      --run-dir "$RUN_DIR" \
      --target <state-id> \
      --decision-note "<why mirroring preserves identity>"
@@ -157,7 +158,7 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 7. **Extract** approved decoded strips into per-state frame directories. Unknown state IDs and unapproved outputs are rejected.
 
    ```bash
-   python "$SKILL_DIR/scripts/icon_forge.py" extract \
+   "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" extract \
      --run-dir "$RUN_DIR" \
      --states all
    ```
@@ -165,7 +166,7 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 8. **Finalize** — compose, validate, package.
 
    ```bash
-   python "$SKILL_DIR/scripts/icon_forge.py" finalize \
+   "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" finalize \
      --bundle <bundle-id> \
      --frames "$RUN_DIR/frames" \
      --entity-id <slug> \
@@ -196,7 +197,7 @@ Default flow:
    Persist `approve` with:
 
    ```bash
-   python "$SKILL_DIR/scripts/icon_forge.py" approve \
+   "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" approve \
      --run-dir "$RUN_DIR" --job-id <state-id> \
      --note "<why it is approved>"
    ```
@@ -257,7 +258,7 @@ qa_note=<one sentence>
 
 ## Dynamic Slack sticker packs (`slack-stickers`)
 
-`slack-stickers` produces 1–12 independent Slack emoji/sticker motifs in the `flat-vector` style on a chroma-key background. Always supply one `--variant id:purpose` per sticker. The `id` becomes both the Slack emoji shortcode and the output PNG filename; the `purpose` is the visual concept the prompt template uses for that sticker.
+`slack-stickers` produces 1–12 independent Slack emoji/sticker motifs in the `flat-vector` style on a chroma-key background. Always supply one `--variant id:purpose` per sticker. The `id` becomes both the Slack emoji shortcode and the output filename stem; final packaging writes transparent 128, 256, 512, and 1024 px PNGs at `<sticker>/<sticker>-<size>.png`. The `purpose` is the visual concept the prompt template uses for that sticker.
 
 **Generating variants from a user theme.** When the user describes a theme (e.g. "stickers for our book club", "stand-up daily mood pack", "5 cat reactions"), derive a coherent set of short slug IDs and concrete visual purposes from that theme:
 
@@ -279,7 +280,7 @@ Do NOT silently fall back to the dev-pack — the result will surprise non-devel
 **Prepare example:**
 
 ```bash
-python "${SKILL_DIR}/scripts/icon_forge.py" prepare \
+"$PYTHON" "${SKILL_DIR}/scripts/icon_forge.py" prepare \
   --bundle slack-stickers \
   --entity-id book-club \
   --display-name "Book Club" \
@@ -310,7 +311,7 @@ Some products need several distinct icon designs that all ship together — main
 Prepare with one `--variant id:purpose` per icon design. Use `id@role:purpose` when you need a style-defined semantic role:
 
 ```bash
-python "${SKILL_DIR}/scripts/icon_forge.py" prepare \
+"$PYTHON" "${SKILL_DIR}/scripts/icon_forge.py" prepare \
   --bundle app-icon-set \
   --entity-id myapp \
   --display-name "MyApp" \
@@ -343,7 +344,7 @@ A new icon product is normally five JSON files plus two prompt templates, no eng
 2. **Style** (`profiles/style/<id>/profile.json` plus `templates/`) — `target_kind`, prompt templates (`base` and `row_strip`), `forbidden_artifacts`, optional versioned semantic `roles`, `chroma_key.candidates`.
 3. **Extractor** (`profiles/extractor/<id>.json`) — typically `chroma-key-slots` for images on chroma-key backgrounds, `slot-only` if the model emits transparent PNG directly.
 4. **Packager** (`profiles/packager/<id>.json`) — pick a registered strategy:
-   - `atlas-extract-folder` for sticker-style packs (one PNG per state plus a README)
+   - `atlas-extract-folder` for sticker-style packs (single-size or configured multi-size state folders plus a README)
    - `multi-size-folder` for icon packs that need the same design at multiple sizes
    - `web-brand-kit` for canonical browser/PWA assets from one brand mark
    - Author a new strategy under `engine/packagers/<name>.py` if neither fits
@@ -368,11 +369,11 @@ private-profiles/
 Search precedence is repeatable CLI `--profile-dir` entries, then `ICON_FORGE_PROFILE_PATH` entries split by `os.pathsep`, then bundled profiles. First match wins. Bundle components resolve independently across the whole chain, so a private bundle can reference bundled components.
 
 ```bash
-python "$SKILL_DIR/scripts/icon_forge.py" show my-private-bundle \
+"$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" show my-private-bundle \
   --profile-dir "$HOME/icon-forge-profiles"
 
 ICON_FORGE_PROFILE_PATH="$HOME/icon-forge-profiles:$HOME/team-profiles" \
-  python "$SKILL_DIR/scripts/icon_forge.py" prepare \
+  "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" prepare \
     --bundle my-private-bundle \
     --entity-id sample \
     --description "Private profile smoke test"
@@ -387,7 +388,7 @@ See `references/profile-schema.md`.
 ## Tests
 
 ```bash
-python -m unittest discover tests -v
+"$PYTHON" -m unittest discover -s tests -p 'test_*.py' -t . -v
 ```
 
-The test suite drives both bundles end-to-end with synthetic imagegen outputs, verifies concurrency safety of `record`, and asserts that profile loading produces sane results.
+The test suite drives all shipped bundles end-to-end with synthetic imagegen outputs, verifies concurrency safety and review gates, and asserts that profile loading and public documentation contracts remain consistent.

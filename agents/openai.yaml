@@ -1,4 +1,4 @@
 interface:
   display_name: "Icon Forge"
-  short_description: "AI-powered icon and sticker pack pipeline"
-  default_prompt: "Drive an icon-forge bundle end-to-end from a concept. List bundles with python scripts/icon_forge.py bundles, inspect with show, then run the workflow: prepare to set up the run folder and imagegen-jobs manifest, status for ready jobs, record to ingest each generated image, derive for any mirror states, extract to split decoded strips into frames, and finalize to compose, validate, and package. For any bundle with multiple parallel-eligible jobs (e.g. slack-stickers with multiple stickers, or app-icon-set with multiple variants), fan out generation to subagents; the parent owns recording. Runs with 8+ parallel-eligible jobs require the mandatory parallelism gate documented in SKILL.md. See SKILL.md for the full subagent contract and authoring guide for new bundles."
+  short_description: "Generate icon and sticker product bundles"
+  default_prompt: "Use $icon-forge to turn my concept into a validated, packaged icon, sticker, or web-brand bundle."

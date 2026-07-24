@@ -2,7 +2,7 @@
 
 icon-forge is a Codex skill for generating icon and sticker packs through
 profile-driven bundles. Contributions are welcome when they keep the skill
-usable as a drop-in folder under `~/.codex/skills/icon-forge`.
+usable as a drop-in folder under `~/.agents/skills/icon-forge`.
 
 ## Development setup
 
@@ -10,11 +10,10 @@ usable as a drop-in folder under `~/.codex/skills/icon-forge`.
 REPO_URL="https://github.com/your-org/icon-forge.git"
 git clone "$REPO_URL"
 cd icon-forge
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m unittest discover tests -v
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -t . -v
 ```
 
 On Windows PowerShell:
@@ -24,14 +23,14 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python -m unittest discover tests -v
+python -m unittest discover -s tests -p 'test_*.py' -t . -v
 ```
 
 ## Pull requests
 
 Before opening a PR:
 
-1. Run `python -m unittest discover tests -v`.
+1. Run `.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -t . -v`.
 2. Keep generated run folders, local prompts, and imagegen outputs out of git.
 3. Add or update tests when changing profile loading, extraction, packaging,
    prompt composition, or CLI behavior.

@@ -1,6 +1,6 @@
 {
   "id": "sticker-folder",
-  "description": "Slack-style sticker output: extracts each atlas cell to a named PNG and writes a README with import instructions. No JSON manifest (Slack has no pack-import format).",
+  "description": "Slack-style sticker output: cleans each decoded sticker master, writes configured PNG sizes in per-sticker folders, and adds a README with import instructions. No JSON manifest (Slack has no pack-import format).",
   "strategy": "atlas-extract-folder",
   "output_root": "${ICON_FORGE_HOME:-$HOME/icon-forge}/stickers/{entity_id}",
   "params": {

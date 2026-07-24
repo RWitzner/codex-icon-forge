@@ -2,7 +2,11 @@
 
 Dev-themed Slack stickers for shipping, testing, deploying, and debugging.
 
-## Stickers (12)
+## Repository previews (12)
+
+The `*.png` files beside this README are one representative preview per motif.
+Current `slack-stickers` runs package each motif at 128, 256, 512, and 1024 px
+under `<sticker>/<sticker>-<size>.png`.
 
 - `:shipping-it:` → `shipping-it.png` (joyful 'we shipped it' celebration)
 - `:tests-passing:` → `tests-passing.png` (all-green test suite, calm confident vibe)
@@ -20,6 +24,6 @@ Dev-themed Slack stickers for shipping, testing, deploying, and debugging.
 ## Importing into Slack
 
 1. Open your Slack workspace and click the workspace name -> Tools & settings -> Customize workspace -> Add Custom Emoji.
-2. For each sticker, click *Add Custom Emoji*, upload the PNG, and use the suggested `:name:` shortcut.
+2. For each sticker, click *Add Custom Emoji*, upload the generated size you want, and use the suggested `:name:` shortcut.
 
-You can drag every PNG in this folder into the Slack import dialog one at a time. Slack does not support bulk emoji import via UI.
+Slack does not support bulk emoji import via UI.
