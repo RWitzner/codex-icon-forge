@@ -25,7 +25,7 @@ products built end-to-end from a single concept.
 
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/what-it-makes-dark.png"><img src="assets/sections/what-it-makes.png" width="32" align="absmiddle"></picture> What it makes
 
-Each "bundle" is a complete icon product. Same engine, three output shapes.
+Each "bundle" is a complete icon product. Same engine, four output shapes.
 
 <table>
 <tr>
@@ -63,6 +63,8 @@ Each "bundle" is a complete icon product. Same engine, three output shapes.
   </td>
 </tr>
 </table>
+
+`web-brand-kit` adds a browser/PWA-focused shape: one coherent brand mark packaged as PNG favicons, `favicon.ico`, `apple-touch-icon.png`, 192/512 PWA icons, `site.webmanifest`, and usage README.
 
 You author new bundles as JSON profiles plus prompt templates. No engine code change for typical new products.
 
@@ -343,12 +345,12 @@ Four orthogonal axes. A **bundle** names one of each.
 | **Atlas** | Cell geometry, state catalog, derivation rules | `profiles/atlas/<id>.json` |
 | **Style** | Target kind, prompt templates, forbidden artifacts, semantic prompt roles, chroma key candidates | `profiles/style/<id>/profile.json` |
 | **Extractor** | Background removal + frame extraction strategy | `profiles/extractor/<id>.json` |
-| **Packager** | Output layout strategy (`atlas-extract-folder`, `multi-size-folder`, ...) | `profiles/packager/<id>.json` |
+| **Packager** | Output layout strategy (`atlas-extract-folder`, `multi-size-folder`, `web-brand-kit`, ...) | `profiles/packager/<id>.json` |
 
 ### Adding your own bundle
 
 1. Decide the output shape: how many designs, how many sizes per design, how files should be named on disk.
-2. Pick a packager strategy (`atlas-extract-folder` for sticker-style packs, `multi-size-folder` for multi-size icon packs, or write a new one).
+2. Pick a packager strategy (`atlas-extract-folder` for sticker-style packs, `multi-size-folder` for multi-size icon packs, `web-brand-kit` for canonical browser/PWA assets, or write a new one).
 3. Author the five profile JSONs and two prompt templates.
 4. Add to `profiles/bundles/<your-bundle>.json` and run `python scripts/icon_forge.py show <your-bundle>` to verify.
 
@@ -403,7 +405,7 @@ python -m pip install -r requirements.txt
 python -m unittest discover tests -v
 ```
 
-Covers: profile loader, role-based prompt composition, composer, validator, two extractor strategies, multi-size and sticker-folder packagers, end-to-end orchestration for all three shipped bundles (`slack-stickers`, `app-icons`, `app-icon-set`), parallel-record concurrency safety, source-provenance enforcement, overwrite guard, dynamic-state variant validation, and chroma edge cleanup.
+Covers: profile loader, role-based prompt composition, composer, validator, two extractor strategies, multi-size, sticker-folder, and web-brand-kit packagers, end-to-end orchestration for all shipped bundles (`slack-stickers`, `app-icons`, `app-icon-set`, `web-brand-kit`), parallel-record concurrency safety, source-provenance enforcement, overwrite guard, dynamic-state variant validation, and chroma edge cleanup.
 
 <div align="right">
 

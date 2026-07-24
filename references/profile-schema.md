@@ -206,7 +206,7 @@ Same `min_used_pixels` and `near_opaque_threshold` validator parameters as above
 |---|---|---|
 | `id` | string | Must match filename |
 | `description` | string | Free text |
-| `strategy` | string | Registered name: `files-and-manifest` or `atlas-extract-folder` |
+| `strategy` | string | Registered name: `files-and-manifest`, `atlas-extract-folder`, `multi-size-folder`, or `web-brand-kit` |
 | `output_root` | string | Output directory template — supports `${VAR:-default}` env-style expansion plus `{entity_id}` / `{display_name}` / `{description}` |
 | `files[]` | array, optional | For `files-and-manifest`: source/target relative paths |
 | `manifest_writer` | object, optional | For `files-and-manifest`: `kind`, `filename`, `schema` (templated dict) |
@@ -229,6 +229,22 @@ Reads the composed atlas from `run_dir/final/spritesheet.{webp,png}`, crops each
 | `readme_template` | unset | Template string with `{display_name}`, `{description}`, `{state_list}`, `{sticker_count}`, `{bundle_id}`, `{entity_id}` substitutions |
 
 The `{state_list}` substitution renders one `- :state-id: → state-id.ext (purpose)` line per state.
+
+### Strategy: `web-brand-kit`
+
+Reads a single-state composed atlas from `run_dir/final/spritesheet.{webp,png}` and writes the canonical browser/PWA asset set:
+
+- `favicon-16x16.png`
+- `favicon-32x32.png`
+- `favicon-48x48.png`
+- `favicon.ico` with 16x16, 32x32, and 48x48 entries
+- `apple-touch-icon.png`
+- `icon-192.png`
+- `icon-512.png`
+- `site.webmanifest`
+- `README.md`
+
+Requires exactly one atlas state. The output root is normally `${ICON_FORGE_HOME:-$HOME/icon-forge}/web-brand-kits/{entity_id}`.
 
 ## Bundle
 

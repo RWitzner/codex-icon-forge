@@ -1,0 +1,28 @@
+{
+  "id": "web-brand-kit",
+  "description": "Single coherent web brand mark rendered at one canonical 1024x1024 cell. The packager fans this out to favicon, Apple touch icon, and PWA manifest assets.",
+  "requires_base": false,
+  "geometry": {
+    "columns": 1,
+    "rows": 1,
+    "cell_width": 1024,
+    "cell_height": 1024
+  },
+  "states": [
+    {
+      "id": "brand",
+      "row": 0,
+      "frames": 1,
+      "durations_ms": [0],
+      "purpose": "the browser and PWA brand mark",
+      "role": "web-brand"
+    }
+  ],
+  "derivations": [],
+  "layout_guides": {
+    "enabled": false,
+    "safe_margin_x": 0,
+    "safe_margin_y": 0,
+    "guide_style": {}
+  }
+}

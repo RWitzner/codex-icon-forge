@@ -212,3 +212,4 @@ def _files_and_manifest(
 # Importing the package's bundled strategies populates the registry.
 from .packagers import multi_size_folder  # noqa: E402,F401
 from .packagers import sticker_folder  # noqa: E402,F401
+from .packagers import web_brand_kit  # noqa: E402,F401

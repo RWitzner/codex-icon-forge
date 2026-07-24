@@ -171,11 +171,19 @@ class CliEndToEndTests(unittest.TestCase):
         bundle_ids = {entry["id"] for entry in result["bundles"]}
         self.assertIn("slack-stickers", bundle_ids)
         self.assertIn("app-icons", bundle_ids)
+        self.assertIn("web-brand-kit", bundle_ids)
 
     def test_show_subcommand_resolves_app_icons(self) -> None:
         result = self._run_cli("show", "app-icons")
         self.assertEqual(result["id"], "app-icons")
         self.assertEqual(result["packager"]["strategy"], "multi-size-folder")
+        self.assertFalse(result["atlas"]["requires_base"])
+
+    def test_show_subcommand_resolves_web_brand_kit(self) -> None:
+        result = self._run_cli("show", "web-brand-kit")
+        self.assertEqual(result["id"], "web-brand-kit")
+        self.assertEqual(result["packager"]["strategy"], "web-brand-kit")
+        self.assertEqual(result["atlas"]["states"][0]["role"], "web-brand")
         self.assertFalse(result["atlas"]["requires_base"])
 
     def test_prepare_subcommand_runs(self) -> None:

@@ -1,0 +1,7 @@
+{
+  "id": "web-brand-kit",
+  "description": "Web brand distribution: writes canonical favicon, Apple touch icon, PWA icons, site.webmanifest, and README from one 1024x1024 source cell.",
+  "strategy": "web-brand-kit",
+  "output_root": "${ICON_FORGE_HOME:-$HOME/icon-forge}/web-brand-kits/{entity_id}",
+  "params": {}
+}

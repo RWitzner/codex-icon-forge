@@ -1,6 +1,6 @@
 ---
 name: icon-forge
-description: Generate icon packs and sticker packs for Slack, Discord, app stores, web favicons, and social platforms. AI image generation drives concept-to-packaged-output through configurable bundle profiles. Each bundle names an atlas geometry, a visual style, an extractor strategy, and a packager. Ships with slack-stickers (1-12 user-defined transparent emoji-sized stickers with import README; canonical dev-pack preset documented), app-icons (one design rendered at 8 platform sizes from 16x16 up to 1024x1024), and app-icon-set (1-12 distinct icon designs each at all 8 sizes). End-to-end CLI subcommands prepare, status, record, review, approve, reject, resume, derive, extract, and finalize drive a resumable run from concept to final files. Subagent fan-out supports parallel sticker generation while the parent agent owns recording, QA review artifacts, review decisions, and packaging. Use when building icon assets or sticker packs that need consistent visual style across multiple outputs.
+description: Generate icon packs and sticker packs for Slack, Discord, app stores, web favicons, and social platforms. AI image generation drives concept-to-packaged-output through configurable bundle profiles. Each bundle names an atlas geometry, a visual style, an extractor strategy, and a packager. Ships with slack-stickers (1-12 user-defined transparent emoji-sized stickers with import README; canonical dev-pack preset documented), app-icons (one design rendered at 8 platform sizes from 16x16 up to 1024x1024), app-icon-set (1-12 distinct icon designs each at all 8 sizes), and web-brand-kit (one browser/PWA brand mark packaged as favicons, favicon.ico, apple-touch-icon, manifest icons, site.webmanifest, and README). End-to-end CLI subcommands prepare, status, record, review, approve, reject, resume, derive, extract, and finalize drive a resumable run from concept to final files. Subagent fan-out supports parallel sticker generation while the parent agent owns recording, QA review artifacts, review decisions, and packaging. Use when building icon assets or sticker packs that need consistent visual style across multiple outputs.
 ---
 
 # Icon Forge
@@ -20,6 +20,7 @@ AI-powered icon and sticker pack pipeline. Same generation engine, multiple entr
 - **`slack-stickers`** — user-defined 1–12 sticker pack, each sticker rendered in a 128x128 cell. Variants are supplied at prepare time via `--variant id:purpose` (one per sticker). Output: one transparent PNG per variant plus a `README.md` with Slack import instructions. Style is `flat-vector` (bold simple shapes, thick outlines, limited palette). The canonical dev-pack preset (`shipping-it`, `tests-passing`, `merge-conflict`, …) lives in README.md as 12 ready-to-paste `--variant` strings.
 - **`app-icons`** — one icon design rendered at 8 platform sizes (16, 32, 64, 128, 180, 256, 512, 1024). Output: 8 sized PNGs plus a README mapping each size to its platform use (iOS App Store, Android Play Store, web favicon, apple-touch-icon, Slack workspace icon). Style is `launcher-tile` (full-colour app launcher tile, hardened against feature-glyph leakage, readable from 16x16).
 - **`app-icon-set`** — user-defined family of 1–12 distinct icon designs (e.g. main + share-extension + watch + notification), each rendered at all 8 platform sizes. Variants are supplied at prepare time via `--variant id:purpose` or, for style-defined semantic roles, `--variant id@role:purpose`; each variant is generated independently by its own subagent, then fan'ed out to subfolders. Output: `<entity>/<variant>/<variant>-<size>.png` plus a family README.
+- **`web-brand-kit`** — one browser/PWA brand mark rendered from a 1024x1024 source cell. Output: PNG favicons, `favicon.ico` with 16/32/48 entries, `apple-touch-icon.png`, 192/512 manifest icons, `site.webmanifest`, and a README with HTML usage.
 
 Add more bundles by authoring profile JSONs — no engine code changes required for typical new products.
 
@@ -30,6 +31,7 @@ Add more bundles by authoring profile JSONs — no engine code changes required 
 | 1–12 transparent stickers/emojis for Slack, Discord, Mattermost | `slack-stickers` bundle with `--variant id:purpose` per sticker (or paste the dev-pack preset) |
 | Single app icon at all platform sizes | `app-icons` bundle |
 | Family of distinct app icons (main + alternates, share-ext, watch, notification, light/dark) each at all sizes | `app-icon-set` bundle with `--variant id:purpose` per design, or `id@role:purpose` for style-defined roles |
+| Browser/PWA favicon and manifest asset kit | `web-brand-kit` bundle |
 | New icon-family product (favicon pack, social avatar set, logo variations) | Author a new bundle with the existing engine |
 | Animated sprite sheets or game character atlases | Use a separate sprite/animation-focused skill; icon-forge is for static icon and sticker products |
 
@@ -104,7 +106,7 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
      --source /absolute/path/to/$CODEX_HOME/generated_images/.../ig_*.png
    ```
 
-   For base jobs (atlases that declare `requires_base: true`; none of the three shipped bundles do, but external bundles may) this also writes `references/canonical-base.png` so subsequent row jobs use it as identity reference. The record step is concurrency-safe: a sibling lock file serialises parallel calls so no manifest update is dropped.
+   For base jobs (atlases that declare `requires_base: true`; none of the shipped bundles do, but external bundles may) this also writes `references/canonical-base.png` so subsequent row jobs use it as identity reference. The record step is concurrency-safe: a sibling lock file serialises parallel calls so no manifest update is dropped.
 
 5. **Render QA artifacts and persist review decisions.** Every recorded or derived result enters `pending` review. Run `review` before approving: it writes `qa/review-sheet.png` and `qa/review.json`, validates decoded output format, proportional strip geometry, useful size, safe `decoded/` paths, the 4096x4096 decoded pixel budget, and non-blank visible content after chroma cleanup. Not-yet-recorded future jobs are shown as skipped placeholders; at least one completed visual output must exist. Review artifacts are protected from accidental overwrite; pass `--force` to regenerate them after recording more jobs.
 
@@ -343,6 +345,7 @@ A new icon product is normally five JSON files plus two prompt templates, no eng
 4. **Packager** (`profiles/packager/<id>.json`) — pick a registered strategy:
    - `atlas-extract-folder` for sticker-style packs (one PNG per state plus a README)
    - `multi-size-folder` for icon packs that need the same design at multiple sizes
+   - `web-brand-kit` for canonical browser/PWA assets from one brand mark
    - Author a new strategy under `engine/packagers/<name>.py` if neither fits
 5. **Bundle** (`profiles/bundles/<id>.json`) — names the four profile IDs.
 

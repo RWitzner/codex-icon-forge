@@ -9,6 +9,24 @@
     "launcher": {
       "purpose_wrapper": "an app launcher tile expressing the visual theme of \"{purpose}\" — render this as a full-colour branded Home Screen app tile, NOT as a UI symbol, tab bar glyph, list-row icon, or feature glyph"
     },
+    "web-brand": {
+      "target_kind": "web brand mark",
+      "purpose_wrapper": "a coherent web brand mark for \"{purpose}\" — render this as one unified browser and PWA identity mark, NOT as a UI glyph, toolbar icon, tab bar symbol, or collection of feature icons",
+      "requirements": [
+        "The mark must stay legible at 16px favicon size while still holding up at 1024x1024.",
+        "Design for browser tabs, bookmarks, pinned shortcuts, apple-touch-icon, and PWA install surfaces.",
+        "Keep adequate edge breathing room so circular masks, browser favicon crops, and home-screen contexts do not clip the mark.",
+        "Use one coherent brand mark or emblem; do not draw multiple disconnected motifs.",
+        "Avoid UI-glyph leakage: no tab bar symbols, toolbar icons, buttons, app UI chrome, or feature pictograms pretending to be a brand."
+      ],
+      "forbidden_artifacts": [
+        "Do not produce SF Symbols-style monochrome glyphs, tab bar icons, button icons, toolbar icons, or list-row icons. The output must read as a complete web brand mark.",
+        "Do not draw multiple disconnected motifs; the mark is one unified iconic brand emblem.",
+        "Do not include text, captions, watermarks, signatures, or UI chrome.",
+        "Do not draw scenery, photorealistic shading, soft drop shadows, heavy gradients, or glossy 3D effects.",
+        "Do not use the chroma-key colour or chroma-adjacent colours in the mark, outline, or accents."
+      ]
+    },
     "watch": {
       "purpose_wrapper": ""
     },
