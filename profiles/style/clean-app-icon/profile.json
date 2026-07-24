@@ -3,6 +3,10 @@
   "description": "Modern app icon style: bold simple silhouette, square-friendly, transparent-ready, readable from 16x16 up to 1024x1024.",
   "extends": null,
   "target_kind": "application icon",
+  "prompt_profile_version": "1.0",
+  "roles": {
+    "default": {}
+  },
   "templates": {
     "base": "templates/base-icon.txt",
     "row_strip": "templates/row-icon.txt"

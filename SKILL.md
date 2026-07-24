@@ -19,7 +19,7 @@ AI-powered icon and sticker pack pipeline. Same generation engine, multiple entr
 
 - **`slack-stickers`** — user-defined 1–12 sticker pack, each sticker rendered in a 128x128 cell. Variants are supplied at prepare time via `--variant id:purpose` (one per sticker). Output: one transparent PNG per variant plus a `README.md` with Slack import instructions. Style is `flat-vector` (bold simple shapes, thick outlines, limited palette). The canonical dev-pack preset (`shipping-it`, `tests-passing`, `merge-conflict`, …) lives in README.md as 12 ready-to-paste `--variant` strings.
 - **`app-icons`** — one icon design rendered at 8 platform sizes (16, 32, 64, 128, 180, 256, 512, 1024). Output: 8 sized PNGs plus a README mapping each size to its platform use (iOS App Store, Android Play Store, web favicon, apple-touch-icon, Slack workspace icon). Style is `launcher-tile` (full-colour app launcher tile, hardened against feature-glyph leakage, readable from 16x16).
-- **`app-icon-set`** — user-defined family of 1–12 distinct icon designs (e.g. main + share-extension + watch + notification), each rendered at all 8 platform sizes. Variants are supplied at prepare time via `--variant id:purpose`; each variant is generated independently by its own subagent, then fan'ed out to subfolders. Output: `<entity>/<variant>/<variant>-<size>.png` plus a family README.
+- **`app-icon-set`** — user-defined family of 1–12 distinct icon designs (e.g. main + share-extension + watch + notification), each rendered at all 8 platform sizes. Variants are supplied at prepare time via `--variant id:purpose` or, for style-defined semantic roles, `--variant id@role:purpose`; each variant is generated independently by its own subagent, then fan'ed out to subfolders. Output: `<entity>/<variant>/<variant>-<size>.png` plus a family README.
 
 Add more bundles by authoring profile JSONs — no engine code changes required for typical new products.
 
@@ -29,7 +29,7 @@ Add more bundles by authoring profile JSONs — no engine code changes required 
 |---|---|
 | 1–12 transparent stickers/emojis for Slack, Discord, Mattermost | `slack-stickers` bundle with `--variant id:purpose` per sticker (or paste the dev-pack preset) |
 | Single app icon at all platform sizes | `app-icons` bundle |
-| Family of distinct app icons (main + alternates, share-ext, watch, notification, light/dark) each at all sizes | `app-icon-set` bundle with `--variant id:purpose` per design |
+| Family of distinct app icons (main + alternates, share-ext, watch, notification, light/dark) each at all sizes | `app-icon-set` bundle with `--variant id:purpose` per design, or `id@role:purpose` for style-defined roles |
 | New icon-family product (favicon pack, social avatar set, logo variations) | Author a new bundle with the existing engine |
 | Animated sprite sheets or game character atlases | Use a separate sprite/animation-focused skill; icon-forge is for static icon and sticker products |
 
@@ -302,10 +302,10 @@ Some products need several distinct icon designs that all ship together — main
 > **Before you run `app-icon-set`:**
 > - If the user's variant IDs sound like in-app features (tabs, buttons, sections) rather than launcher purposes → see "STOP — before `prepare`: disambiguate iOS icon intent" above. `app-icon-set` produces full-colour square Home Screen tiles, not in-app symbols.
 > - The `launcher-tile` style profile re-frames every variant purpose declaratively (via `purpose_wrapper`) so feature-named variants cannot dominate the prompt. You do **not** need to re-write `--variant id:purpose` strings yourself; pass them through verbatim.
-> - `watch`, `notification`, `light`, and `dark` variant IDs receive automatic per-variant overrides (monochrome silhouette for watch/notification; full-colour tile with explicit light/dark intent for light/dark). Use those exact IDs to opt in.
+> - `watch`, `notification`, `light`, and `dark` variant IDs receive automatic per-variant overrides (monochrome silhouette for watch/notification; full-colour tile with explicit light/dark intent for light/dark). Use those exact IDs to opt in. The explicit role syntax `watch@watch:...` and `notification@notification:...` is also supported by the bundled launcher style and persists through resume/finalize.
 > - After the first variant is recorded → pause for human approval before fanning out to the remaining variants. See step 3 of "Default workflow" and step 3 of "Subagent row generation".
 
-Prepare with one `--variant id:purpose` per icon design:
+Prepare with one `--variant id:purpose` per icon design. Use `id@role:purpose` when you need a style-defined semantic role:
 
 ```bash
 python "${SKILL_DIR}/scripts/icon_forge.py" prepare \
@@ -317,7 +317,7 @@ python "${SKILL_DIR}/scripts/icon_forge.py" prepare \
   --output-dir "${RUN_DIR}" \
   --variant "main:primary app icon" \
   --variant "share-ext:share extension, simpler version" \
-  --variant "watch:1-bit silhouette for watchOS" \
+  --variant "watch@watch:1-bit silhouette for watchOS" \
   --force
 ```
 
@@ -325,6 +325,7 @@ Variant ID rules (validated at prepare time):
 
 - 1–12 variants per run; pass `--variant` repeatedly
 - ID matches `^[a-z0-9][a-z0-9-]{0,30}$` (slug-style)
+- Role ID, when supplied with `id@role:purpose`, uses the same slug-style shape and must be defined by the style profile
 - IDs must be unique within the run
 - Purpose is required and at most 200 chars
 
@@ -337,7 +338,7 @@ For a single icon at all sizes, use the simpler `app-icons` bundle — `app-icon
 A new icon product is normally five JSON files plus two prompt templates, no engine code change.
 
 1. **Atlas** (`profiles/atlas/<id>.json`) — geometry, state catalog. For most icon products, one or N states with `frames: 1`.
-2. **Style** (`profiles/style/<id>/profile.json` plus `templates/`) — `target_kind`, prompt templates (`base` and `row_strip`), `forbidden_artifacts`, `chroma_key.candidates`.
+2. **Style** (`profiles/style/<id>/profile.json` plus `templates/`) — `target_kind`, prompt templates (`base` and `row_strip`), `forbidden_artifacts`, optional versioned semantic `roles`, `chroma_key.candidates`.
 3. **Extractor** (`profiles/extractor/<id>.json`) — typically `chroma-key-slots` for images on chroma-key backgrounds, `slot-only` if the model emits transparent PNG directly.
 4. **Packager** (`profiles/packager/<id>.json`) — pick a registered strategy:
    - `atlas-extract-folder` for sticker-style packs (one PNG per state plus a README)

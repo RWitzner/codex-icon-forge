@@ -3,6 +3,10 @@
   "description": "Flat vector sticker style for Slack-style emoji packs: bold simple shapes, limited palette, transparent background, no animation language.",
   "extends": null,
   "target_kind": "Slack-pack sticker",
+  "prompt_profile_version": "1.0",
+  "roles": {
+    "default": {}
+  },
   "templates": {
     "base": "templates/base-sticker.txt",
     "row_strip": "templates/row-sticker.txt"

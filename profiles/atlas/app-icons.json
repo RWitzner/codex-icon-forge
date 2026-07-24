@@ -14,7 +14,8 @@
       "row": 0,
       "frames": 1,
       "durations_ms": [0],
-      "purpose": "the application icon design"
+      "purpose": "the application icon design",
+      "role": "launcher"
     }
   ],
   "derivations": [],

@@ -29,6 +29,7 @@ from .request_manifest import read_request
 PROFILES_ROOT = Path(__file__).resolve().parent.parent / "profiles"
 
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+_ROLE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
 _VALID_DERIVATION_METHODS = {"horizontal-mirror", "vertical-mirror"}
 _VALID_FALLBACK_STRATEGIES = {"full-generation", "error"}
 
@@ -65,6 +66,7 @@ class StateSpec:
     frames: int
     durations_ms: tuple[int, ...]
     purpose: str
+    role: str = "default"
     is_reduced_motion_first_frame: bool = False
 
 
@@ -115,6 +117,7 @@ class VariantSpec:
 
     id: str
     purpose: str
+    role: str = "default"
 
 
 @dataclass(frozen=True)
@@ -180,9 +183,18 @@ def materialize_dynamic_atlas(
     seen: set[str] = set()
     states: list[StateSpec] = []
     for index, variant in enumerate(variants):
-        if not isinstance(variant.id, str) or not _VARIANT_ID_PATTERN.match(variant.id):
+        if not isinstance(variant.id, str) or not _VARIANT_ID_PATTERN.match(
+            variant.id
+        ):
             raise ProfileError(
                 f"variant id {variant.id!r} is invalid; must match "
+                "[a-z0-9][a-z0-9-]{0,30}"
+            )
+        if not isinstance(variant.role, str) or not _ROLE_ID_PATTERN.match(
+            variant.role
+        ):
+            raise ProfileError(
+                f"variant {variant.id!r} role {variant.role!r} is invalid; must match "
                 "[a-z0-9][a-z0-9-]{0,30}"
             )
         if variant.id in seen:
@@ -202,6 +214,7 @@ def materialize_dynamic_atlas(
                 frames=1,
                 durations_ms=(0,),
                 purpose=purpose,
+                role=variant.role,
             )
         )
 
@@ -226,6 +239,14 @@ def materialize_dynamic_atlas(
 # ---------------------------------------------------------------------------
 # Style profile
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PromptRole:
+    target_kind: str | None = None
+    purpose_wrapper: str | None = None
+    requirements: tuple[str, ...] = ()
+    forbidden_artifacts: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -255,6 +276,8 @@ class StyleProfile:
     extends: str | None = None
     purpose_wrapper: str = ""
     purpose_wrapper_overrides: dict[str, str] = field(default_factory=dict)
+    prompt_profile_version: str = "legacy"
+    roles: dict[str, PromptRole] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -340,6 +363,38 @@ def _require_hex(value: str, context: str) -> str:
     return "#" + value[1:].upper()
 
 
+def _require_slug(value: Any, context: str) -> str:
+    if not isinstance(value, str) or not _ROLE_ID_PATTERN.match(value):
+        raise ProfileError(
+            f"{context}: expected stable slug matching [a-z0-9][a-z0-9-]{{0,30}}, "
+            f"got {value!r}"
+        )
+    return value
+
+
+def _string_tuple(value: Any, context: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ProfileError(f"{context}: expected list of strings")
+    items: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str):
+            raise ProfileError(f"{context}[{index}]: expected string")
+        items.append(item)
+    return tuple(items)
+
+
+def _probe_purpose_wrapper(wrapper: str, where: str) -> None:
+    if not wrapper:
+        return
+    try:
+        wrapper.format(purpose="probe")
+    except (KeyError, IndexError, ValueError) as exc:
+        raise ProfileError(
+            f"{where}: malformed format string ({exc}); only the {{purpose}} "
+            "placeholder is supported"
+        ) from exc
+
+
 def load_atlas_profile(profile_id: str, root: Path = PROFILES_ROOT) -> AtlasProfile:
     path = root / "atlas" / f"{profile_id}.json"
     data = _read_json(path)
@@ -412,6 +467,9 @@ def load_atlas_profile(profile_id: str, root: Path = PROFILES_ROOT) -> AtlasProf
                 frames=frames,
                 durations_ms=durations,
                 purpose=str(_require(state, "purpose", state_context)),
+                role=_require_slug(
+                    state.get("role", "default"), f"{state_context}.role"
+                ),
                 is_reduced_motion_first_frame=bool(
                     state.get("is_reduced_motion_first_frame", False)
                 ),
@@ -506,34 +564,85 @@ def load_style_profile(profile_id: str, root: Path = PROFILES_ROOT) -> StyleProf
         str(state_id): str(wrapper) for state_id, wrapper in overrides_raw.items()
     }
 
-    def _probe_wrapper(wrapper: str, where: str) -> None:
-        if not wrapper:
-            return
-        try:
-            wrapper.format(purpose="probe")
-        except (KeyError, IndexError, ValueError) as exc:
-            raise ProfileError(
-                f"{where}: malformed format string ({exc}); only the {{purpose}} "
-                "placeholder is supported"
-            ) from exc
-
-    _probe_wrapper(purpose_wrapper, f"{context}.prompt_blocks.purpose_wrapper")
+    _probe_purpose_wrapper(purpose_wrapper, f"{context}.prompt_blocks.purpose_wrapper")
     for state_id, wrapper in purpose_wrapper_overrides.items():
-        _probe_wrapper(
+        _probe_purpose_wrapper(
             wrapper,
             f"{context}.prompt_blocks.purpose_wrapper_overrides[{state_id!r}]",
         )
 
-    forbidden = tuple(str(item) for item in data.get("forbidden_artifacts", []))
+    forbidden = _string_tuple(
+        data.get("forbidden_artifacts", []), f"{context}.forbidden_artifacts"
+    )
 
     state_requirements_raw = data.get("state_requirements", {}) or {}
     state_requirements: dict[str, tuple[str, ...]] = {}
     for state_id, requirements in state_requirements_raw.items():
-        if not isinstance(requirements, list):
-            raise ProfileError(
-                f"{context}.state_requirements[{state_id!r}]: expected list of strings"
+        state_requirements[str(state_id)] = _string_tuple(
+            requirements, f"{context}.state_requirements[{state_id!r}]"
+        )
+
+    prompt_profile_version = data.get("prompt_profile_version", "legacy")
+    if (
+        not isinstance(prompt_profile_version, str)
+        or not prompt_profile_version.strip()
+    ):
+        raise ProfileError(f"{context}.prompt_profile_version must be non-empty")
+    roles_raw = data.get("roles")
+    roles: dict[str, PromptRole] = {}
+    if roles_raw is None:
+        roles["default"] = PromptRole()
+    else:
+        if not isinstance(roles_raw, dict):
+            raise ProfileError(f"{context}.roles must be an object")
+        for raw_role_id, role_data in roles_raw.items():
+            role_id = _require_slug(str(raw_role_id), f"{context}.roles key")
+            if not isinstance(role_data, dict):
+                raise ProfileError(f"{context}.roles[{role_id!r}] must be an object")
+
+            target_kind = role_data.get("target_kind")
+            if target_kind is not None and not isinstance(target_kind, str):
+                raise ProfileError(
+                    f"{context}.roles[{role_id!r}].target_kind must be a string"
+                )
+            if isinstance(target_kind, str) and not target_kind.strip():
+                raise ProfileError(
+                    f"{context}.roles[{role_id!r}].target_kind must be non-empty"
+                )
+
+            purpose_wrapper_override = role_data.get("purpose_wrapper")
+            if purpose_wrapper_override is not None:
+                if not isinstance(purpose_wrapper_override, str):
+                    raise ProfileError(
+                        f"{context}.roles[{role_id!r}].purpose_wrapper must be a string"
+                    )
+                _probe_purpose_wrapper(
+                    purpose_wrapper_override,
+                    f"{context}.roles[{role_id!r}].purpose_wrapper",
+                )
+
+            requirements = role_data.get("requirements", [])
+            requirements_tuple = _string_tuple(
+                requirements, f"{context}.roles[{role_id!r}].requirements"
             )
-        state_requirements[str(state_id)] = tuple(str(item) for item in requirements)
+
+            forbidden_override = role_data.get("forbidden_artifacts")
+            if forbidden_override is None:
+                forbidden_tuple: tuple[str, ...] | None = None
+            else:
+                forbidden_tuple = _string_tuple(
+                    forbidden_override,
+                    f"{context}.roles[{role_id!r}].forbidden_artifacts",
+                )
+
+            roles[role_id] = PromptRole(
+                target_kind=target_kind,
+                purpose_wrapper=purpose_wrapper_override,
+                requirements=requirements_tuple,
+                forbidden_artifacts=forbidden_tuple,
+            )
+        if "default" not in roles:
+            roles = {"default": PromptRole(), **roles}
 
     chroma_data = _require(data, "chroma_key", context)
     candidates_data = _require(chroma_data, "candidates", f"{context}.chroma_key")
@@ -567,6 +676,8 @@ def load_style_profile(profile_id: str, root: Path = PROFILES_ROOT) -> StyleProf
         extends=data.get("extends") or None,
         purpose_wrapper=purpose_wrapper,
         purpose_wrapper_overrides=purpose_wrapper_overrides,
+        prompt_profile_version=prompt_profile_version,
+        roles=roles,
     )
 
 
@@ -666,7 +777,11 @@ def load_bundle_for_run(
         return bundle
     raw_variants = request.get("variants") or []
     variants = [
-        VariantSpec(id=str(item["id"]), purpose=str(item["purpose"]))
+        VariantSpec(
+            id=str(item["id"]),
+            purpose=str(item["purpose"]),
+            role=item.get("role", "default"),
+        )
         for item in raw_variants
     ]
     materialised = materialize_dynamic_atlas(bundle.atlas, variants)
@@ -678,3 +793,16 @@ def load_bundle_for_run(
         extractor=bundle.extractor,
         packager=bundle.packager,
     )
+
+
+def validate_prompt_roles(atlas: AtlasProfile, style: StyleProfile) -> None:
+    """Validate that every materialized state names a role the style supports."""
+
+    unknown = sorted(
+        {state.role for state in atlas.states if state.role not in style.roles}
+    )
+    if unknown:
+        raise ProfileError(
+            f"atlas {atlas.id!r} uses prompt role(s) not defined by style "
+            f"{style.id!r}: {', '.join(unknown)}"
+        )

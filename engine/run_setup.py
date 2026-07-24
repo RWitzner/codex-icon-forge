@@ -22,7 +22,14 @@ from PIL import Image
 from .chroma import choose_chroma_key
 from .layout_guides import GUIDE_SUBDIR, render_all
 from .manifest import ImagegenManifest, Job, JobInput, now_iso
-from .profiles import Bundle, StateSpec, VariantSpec, materialize_dynamic_atlas
+from .profiles import (
+    Bundle,
+    StateSpec,
+    StyleProfile,
+    VariantSpec,
+    materialize_dynamic_atlas,
+    validate_prompt_roles,
+)
 from .prompts import compose_base_prompt, compose_row_prompt
 from .request_manifest import read_request, write_request
 
@@ -114,6 +121,7 @@ def _make_jobs(
                 parallelizable_after=[],
                 mirror_policy={},
                 recording_owner="parent",
+                prompt_profile=_prompt_profile_metadata(bundle.style, "default"),
             )
         )
 
@@ -175,6 +183,7 @@ def _make_jobs(
                 parallelizable_after=list(depends_on),
                 mirror_policy=mirror_policy,
                 recording_owner="parent",
+                prompt_profile=_prompt_profile_metadata(bundle.style, state.role),
             )
         )
 
@@ -191,6 +200,14 @@ def _approval_gate_job_id(jobs: list[Job]) -> str | None:
         if not any(dependency in non_base_ids for dependency in job.depends_on):
             return job.id
     return next((job.id for job in jobs if job.kind != "base"), None)
+
+
+def _prompt_profile_metadata(style: StyleProfile, role: str) -> dict[str, str]:
+    return {
+        "style": style.id,
+        "version": style.prompt_profile_version,
+        "role": role,
+    }
 
 
 def prepare_run(options: PrepareOptions) -> dict[str, Any]:
@@ -210,6 +227,7 @@ def prepare_run(options: PrepareOptions) -> dict[str, Any]:
             f"bundle {bundle.id!r} does not accept --variant; only bundles "
             "whose atlas declares dynamic_states.enabled support per-run variants"
         )
+    validate_prompt_roles(bundle.atlas, bundle.style)
     run_dir = options.output_dir.expanduser().resolve()
     if run_dir.exists() and any(run_dir.iterdir()) and not options.force:
         raise FileExistsError(
@@ -296,6 +314,8 @@ def prepare_run(options: PrepareOptions) -> dict[str, Any]:
                 "row": state.row,
                 "frames": state.frames,
                 "purpose": state.purpose,
+                "role": state.role,
+                "prompt_profile": _prompt_profile_metadata(bundle.style, state.role),
             }
             for state in bundle.atlas.states
         ],
@@ -303,7 +323,12 @@ def prepare_run(options: PrepareOptions) -> dict[str, Any]:
         "references": copied_refs,
         "chroma_key": chroma,
         "variants": [
-            {"id": variant.id, "purpose": variant.purpose}
+            {
+                "id": variant.id,
+                "purpose": variant.purpose,
+                "role": variant.role,
+                "prompt_profile": _prompt_profile_metadata(bundle.style, variant.role),
+            }
             for variant in options.variants
         ] if bundle.atlas.is_dynamic else [],
     }

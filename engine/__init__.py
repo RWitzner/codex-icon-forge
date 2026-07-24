@@ -14,6 +14,7 @@ from .profiles import (
     ManifestWriter,
     PackagerProfile,
     PROFILES_ROOT,
+    PromptRole,
     ProfileError,
     StateSpec,
     StyleProfile,
@@ -25,6 +26,7 @@ from .profiles import (
     load_packager_profile,
     load_style_profile,
     materialize_dynamic_atlas,
+    validate_prompt_roles,
 )
 from .review import review_outputs
 from .run_setup import approve_results, reject_result, resume_run
@@ -43,6 +45,7 @@ __all__ = [
     "ManifestWriter",
     "PackagerProfile",
     "PROFILES_ROOT",
+    "PromptRole",
     "ProfileError",
     "StateSpec",
     "StyleProfile",
@@ -54,6 +57,7 @@ __all__ = [
     "load_packager_profile",
     "load_style_profile",
     "materialize_dynamic_atlas",
+    "validate_prompt_roles",
     "review_outputs",
     "approve_results",
     "reject_result",

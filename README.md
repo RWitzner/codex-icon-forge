@@ -309,7 +309,7 @@ The `slack-stickers` bundle is dynamic - you decide what each sticker is. The `d
 <details>
 <summary><kbd><strong>Icon families with <code>app-icon-set</code></strong></kbd></summary>
 
-Pass one `--variant id:purpose` per design (1-12 per run). IDs must match `^[a-z0-9][a-z0-9-]{0,30}$` and be unique; purpose is required and at most 200 chars.
+Pass one `--variant id:purpose` per design (1-12 per run). IDs must match `^[a-z0-9][a-z0-9-]{0,30}$` and be unique; purpose is required and at most 200 chars. Use `id@role:purpose` only when the style profile defines a semantic prompt role for that variant; `id:purpose` remains the default role. The bundled launcher style supports `watch@watch:...` and `notification@notification:...` for silhouette variants, while exact IDs `watch` and `notification` still keep the legacy automatic behavior.
 
 ```bash
 python "$SKILL_DIR/scripts/icon_forge.py" prepare \
@@ -321,10 +321,10 @@ python "$SKILL_DIR/scripts/icon_forge.py" prepare \
   --output-dir "$RUN" \
   --variant "main:primary app icon" \
   --variant "share-ext:share extension, simpler version" \
-  --variant "watch:1-bit silhouette for watchOS"
+  --variant "watch@watch:1-bit silhouette for watchOS"
 ```
 
-Each variant becomes its own `$imagegen` job. The first variant is a persisted approval gate; after it is recorded and approved, fan the remaining ready jobs out to subagents. The rest of the workflow (`status`, `record`, `approve`, `extract`, `finalize`) is identical; the bundle reloads its variants from `request.json` automatically.
+Each variant becomes its own `$imagegen` job. The first variant is a persisted approval gate; after it is recorded and approved, fan the remaining ready jobs out to subagents. The rest of the workflow (`status`, `record`, `approve`, `extract`, `finalize`) is identical; the bundle reloads its variants and prompt roles from `request.json` automatically.
 
 </details>
 
@@ -341,7 +341,7 @@ Four orthogonal axes. A **bundle** names one of each.
 | Axis | Controls | Profile path |
 |---|---|---|
 | **Atlas** | Cell geometry, state catalog, derivation rules | `profiles/atlas/<id>.json` |
-| **Style** | Target kind, prompt templates, forbidden artifacts, chroma key candidates | `profiles/style/<id>/profile.json` |
+| **Style** | Target kind, prompt templates, forbidden artifacts, semantic prompt roles, chroma key candidates | `profiles/style/<id>/profile.json` |
 | **Extractor** | Background removal + frame extraction strategy | `profiles/extractor/<id>.json` |
 | **Packager** | Output layout strategy (`atlas-extract-folder`, `multi-size-folder`, ...) | `profiles/packager/<id>.json` |
 
@@ -362,9 +362,10 @@ See [`references/profile-schema.md`](references/profile-schema.md) for the canon
 
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/safety-dark.png"><img src="assets/sections/safety.png" width="32" align="absmiddle"></picture> Safety guarantees
 
-The parent agent owns all writes into the run directory. Subagents only generate images and return paths; the parent calls `record`, `review`, `approve`, `reject`, `extract`, `derive`, and `finalize`. Five programmatic guards back this contract:
+The parent agent owns all writes into the run directory. Subagents only generate images and return paths; the parent calls `record`, `review`, `approve`, `reject`, `extract`, `derive`, and `finalize`. Six programmatic guards back this contract:
 
-- **Concurrency.** `record` and `derive` serialise their manifest read-modify-write under a sibling lock file (`imagegen-jobs.json.lock`). Parallel record calls from a fan-out cannot drop status updates. Manifest writes use a unique tmp filename + `os.replace` so concurrent writers cannot collide on the tmp path either.
+- **Prompt profile metadata.** Prepared runs persist each state's style ID, prompt profile version, and semantic role in `request.json` and in every `imagegen-jobs.json` job. Older manifests without this field still load.
+- **Concurrency.** `record` and `derive` serialise their manifest read-modify-write under a sibling lock file (`imagegen-jobs.json.lock`). Parallel record calls from a fan-out cannot drop status updates. Manifest writes use a unique tmp filename + `os.replace` so concurrent writers do not collide on the tmp path either.
 - **Persisted approval gate.** A multi-job run exposes only its first representative job until that result is approved. Jobs whose dependencies are not approved cannot be recorded, and `extract` refuses every selected output whose review state is not `approved`. Rejecting a gate or dependency invalidates already-recorded affected outputs so stale fan-out cannot later be extracted. `resume` reports whether the next action is `generate`, `review`, `regenerate`, or `extract`.
 - **Visual QA.** `review` writes `qa/review-sheet.png` and `qa/review.json` from decoded outputs without altering source images. Future pending jobs are shown as skipped placeholders; at least one completed visual output must be present. The sheet shows each completed visual job on light and dark checkerboards after the same chroma cleanup used by extraction. The JSON records raw source dimensions/mode/format, cleaned alpha bounds, validation errors, and the logical expected strip size. High-resolution decoded masters are valid when their aspect ratio matches the logical strip (`cell_width * frames` by `cell_height`) and they are not smaller than that logical size. Manifest `output_path` values must be relative paths under `decoded/` with no parent components or symlink escapes. Decoded images above 16,777,216 pixels are rejected before RGBA conversion or chroma cleanup.
 - **Provenance.** `record` rejects any source path that is not `$CODEX_HOME/generated_images/.../ig_*.png`, and any path inside the run directory itself. Locally drawn or post-processed images cannot be ingested as visual job outputs. The hidden `--allow-synthetic-test-source` flag bypasses the check for unit tests only - never use it in real runs.
@@ -402,7 +403,7 @@ python -m pip install -r requirements.txt
 python -m unittest discover tests -v
 ```
 
-Covers: profile loader, prompt composition, composer, validator, two extractor strategies, multi-size and sticker-folder packagers, end-to-end orchestration for all three shipped bundles (`slack-stickers`, `app-icons`, `app-icon-set`), parallel-record concurrency safety, source-provenance enforcement, overwrite guard, dynamic-state variant validation, and chroma edge cleanup.
+Covers: profile loader, role-based prompt composition, composer, validator, two extractor strategies, multi-size and sticker-folder packagers, end-to-end orchestration for all three shipped bundles (`slack-stickers`, `app-icons`, `app-icon-set`), parallel-record concurrency safety, source-provenance enforcement, overwrite guard, dynamic-state variant validation, and chroma edge cleanup.
 
 <div align="right">
 

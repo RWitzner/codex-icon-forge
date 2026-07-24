@@ -18,7 +18,7 @@ from typing import Any
 
 MANIFEST_FILENAME = "imagegen-jobs.json"
 LOCK_FILENAME = "imagegen-jobs.json.lock"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 REVIEW_STATUSES = frozenset(
     {"not-recorded", "pending", "approved", "rejected"}
 )
@@ -91,6 +91,7 @@ class Job:
     review_status: str = "not-recorded"
     reviewed_at: str | None = None
     review_note: str | None = None
+    prompt_profile: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -110,6 +111,8 @@ class Job:
             "recording_owner": self.recording_owner,
             "review_status": self.review_status,
         }
+        if self.prompt_profile:
+            data["prompt_profile"] = dict(self.prompt_profile)
         if self.source is not None:
             data["source"] = self.source
         if self.recorded_at is not None:
@@ -262,6 +265,7 @@ def load_manifest(run_dir: Path) -> ImagegenManifest:
                 review_status=review_status,
                 reviewed_at=job_data.get("reviewed_at"),
                 review_note=job_data.get("review_note"),
+                prompt_profile=dict(job_data.get("prompt_profile", {})),
             )
         )
     return ImagegenManifest(

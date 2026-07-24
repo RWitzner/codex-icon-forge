@@ -1,6 +1,6 @@
 {
   "id": "app-icon-set",
-  "description": "User-defined family of distinct icon designs (e.g. main + share-extension + watch). Each variant is generated independently and rendered at multiple platform sizes. Variants are supplied at prepare time via --variant id:purpose; up to 12 per run.",
+  "description": "User-defined family of distinct icon designs (e.g. main + share-extension + watch). Each variant is generated independently and rendered at multiple platform sizes. Variants are supplied at prepare time via --variant id:purpose or id@role:purpose; up to 12 per run.",
   "requires_base": false,
   "geometry": {
     "columns": 1,

@@ -3,6 +3,19 @@
   "description": "App launcher tile style: full-colour brand-feel app icon designed to sit on a Home Screen rounded-square tile. Distinct from in-app symbols/glyphs. Hardened against feature-glyph leakage when variant purposes are feature-named. Only `watch` and `notification` variants opt out of the purpose_wrapper (via empty-string overrides) because their state_requirements demand a 1-bit silhouette — a fundamentally different render than the launcher-tile wrapper assumes. All other variant IDs (main, share-ext, light, dark, icon, alternate-N, etc.) receive the default launcher-tile wrapper; light and dark also pick up state_requirements with surface-tinted hints.",
   "extends": null,
   "target_kind": "app launcher icon",
+  "prompt_profile_version": "1.0",
+  "roles": {
+    "default": {},
+    "launcher": {
+      "purpose_wrapper": "an app launcher tile expressing the visual theme of \"{purpose}\" — render this as a full-colour branded Home Screen app tile, NOT as a UI symbol, tab bar glyph, list-row icon, or feature glyph"
+    },
+    "watch": {
+      "purpose_wrapper": ""
+    },
+    "notification": {
+      "purpose_wrapper": ""
+    }
+  },
   "templates": {
     "base": "templates/base-icon.txt",
     "row_strip": "templates/row-icon.txt"

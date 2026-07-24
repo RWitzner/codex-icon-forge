@@ -552,8 +552,26 @@ class DynamicVariantPrepareTests(unittest.TestCase):
             self.assertEqual(
                 request["variants"],
                 [
-                    {"id": "main", "purpose": "primary app icon"},
-                    {"id": "share-ext", "purpose": "share extension"},
+                    {
+                        "id": "main",
+                        "purpose": "primary app icon",
+                        "role": "default",
+                        "prompt_profile": {
+                            "style": "launcher-tile",
+                            "version": "1.0",
+                            "role": "default",
+                        },
+                    },
+                    {
+                        "id": "share-ext",
+                        "purpose": "share extension",
+                        "role": "default",
+                        "prompt_profile": {
+                            "style": "launcher-tile",
+                            "version": "1.0",
+                            "role": "default",
+                        },
+                    },
                 ],
             )
             self.assertEqual(request["atlas_geometry"]["rows"], 2)
@@ -563,6 +581,97 @@ class DynamicVariantPrepareTests(unittest.TestCase):
             )
             self.assertEqual(len(manifest["jobs"]), 2)
             self.assertEqual({j["id"] for j in manifest["jobs"]}, {"main", "share-ext"})
+            self.assertEqual(
+                {j["id"]: j["prompt_profile"]["role"] for j in manifest["jobs"]},
+                {"main": "default", "share-ext": "default"},
+            )
+
+    def test_prepare_with_variant_roles_round_trips_through_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run"
+            variants = [
+                VariantSpec(id="watch", purpose="watch silhouette", role="watch"),
+                VariantSpec(id="notification", purpose="status silhouette", role="notification"),
+            ]
+            prepare_run(
+                PrepareOptions(
+                    bundle=self.bundle,
+                    entity_id="myapp",
+                    display_name="MyApp",
+                    description="prepare with role variants",
+                    entity_notes="modern minimalist",
+                    style_notes="",
+                    references=[],
+                    output_dir=run_dir,
+                    chroma_key="auto",
+                    force=True,
+                    variants=variants,
+                )
+            )
+
+            request = json.loads(
+                (run_dir / "request.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                request["variants"],
+                [
+                    {
+                        "id": "watch",
+                        "purpose": "watch silhouette",
+                        "role": "watch",
+                        "prompt_profile": {
+                            "style": "launcher-tile",
+                            "version": "1.0",
+                            "role": "watch",
+                        },
+                    },
+                    {
+                        "id": "notification",
+                        "purpose": "status silhouette",
+                        "role": "notification",
+                        "prompt_profile": {
+                            "style": "launcher-tile",
+                            "version": "1.0",
+                            "role": "notification",
+                        },
+                    },
+                ],
+            )
+
+            reloaded = load_bundle_for_run(run_dir)
+            self.assertEqual(
+                [(state.id, state.role) for state in reloaded.atlas.states],
+                [("watch", "watch"), ("notification", "notification")],
+            )
+
+    def test_prepare_rejects_unknown_static_role_before_artifacts(self) -> None:
+        import dataclasses
+
+        broken_state = dataclasses.replace(
+            load_bundle("app-icons").atlas.states[0], role="missing"
+        )
+        broken_atlas = dataclasses.replace(
+            load_bundle("app-icons").atlas, states=(broken_state,)
+        )
+        broken_bundle = dataclasses.replace(self.bundle, atlas=broken_atlas)
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run"
+            with self.assertRaises(ProfileError):
+                prepare_run(
+                    PrepareOptions(
+                        bundle=broken_bundle,
+                        entity_id="myapp",
+                        display_name="MyApp",
+                        description="bad role",
+                        entity_notes="modern minimalist",
+                        style_notes="",
+                        references=[],
+                        output_dir=run_dir,
+                        chroma_key="auto",
+                        force=True,
+                    )
+                )
+            self.assertFalse(run_dir.exists())
 
     def test_load_bundle_for_run_reads_request_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -639,7 +748,7 @@ class DynamicVariantCliTests(unittest.TestCase):
                 "--notes", "modern minimalist",
                 "--output-dir", str(run_dir),
                 "--variant", "main:primary app icon",
-                "--variant", "share-ext:share extension simpler",
+                "--variant", "watch@watch:watchOS silhouette",
                 "--force",
             )
             payload = json.loads(result.stdout)
@@ -711,6 +820,12 @@ class DynamicVariantCliTests(unittest.TestCase):
             result = self._run_cli(*args, expect_success=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("at most 12", result.stderr)
+
+    def test_prepare_help_mentions_role_variant_syntax(self) -> None:
+        result = self._run_cli("prepare", "--help")
+        self.assertIn("id:purpose", result.stdout)
+        self.assertIn("id@role:purpose", result.stdout)
+        self.assertIn("watch@watch:watchOS silhouette", result.stdout)
 
 
 class DefaultOutputDirTests(unittest.TestCase):

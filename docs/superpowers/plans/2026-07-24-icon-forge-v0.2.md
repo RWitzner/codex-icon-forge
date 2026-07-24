@@ -137,6 +137,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py' -
 - Modify: `engine/profiles.py`
 - Modify: `engine/prompts.py`
 - Modify: `engine/run_setup.py`
+- Modify: `engine/manifest.py`
+- Modify: `engine/__init__.py`
 - Modify: `scripts/icon_forge.py`
 - Modify: `profiles/style/launcher-tile/profile.json`
 - Modify: `profiles/style/flat-vector/profile.json`

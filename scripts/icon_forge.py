@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -55,14 +56,34 @@ from engine.run_setup import (  # noqa: E402
 from engine.review import review_outputs  # noqa: E402
 from PIL import Image  # noqa: E402
 
+_ROLE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
+
 
 def _parse_variant_arg(raw: str) -> VariantSpec:
     if ":" not in raw:
         raise argparse.ArgumentTypeError(
-            f"--variant expects 'id:purpose', got {raw!r}"
+            f"--variant expects 'id:purpose' or 'id@role:purpose', got {raw!r}"
         )
-    variant_id, _, purpose = raw.partition(":")
-    return VariantSpec(id=variant_id.strip(), purpose=purpose.strip())
+    variant_head, _, purpose = raw.partition(":")
+    variant_head = variant_head.strip()
+    role = "default"
+    if "@" in variant_head:
+        if variant_head.count("@") != 1:
+            raise argparse.ArgumentTypeError(
+                f"--variant role syntax must be 'id@role:purpose', got {raw!r}"
+            )
+        variant_id, role = (part.strip() for part in variant_head.split("@", 1))
+        if not variant_id or not role:
+            raise argparse.ArgumentTypeError(
+                f"--variant role syntax must include both id and role, got {raw!r}"
+            )
+        if not _ROLE_ID_PATTERN.match(role):
+            raise argparse.ArgumentTypeError(
+                f"--variant role {role!r} is invalid; must match [a-z0-9][a-z0-9-]{{0,30}}"
+            )
+    else:
+        variant_id = variant_head
+    return VariantSpec(id=variant_id.strip(), purpose=purpose.strip(), role=role)
 
 
 def _list_bundles(_args: argparse.Namespace) -> int:
@@ -97,7 +118,13 @@ def _show(args: argparse.Namespace) -> int:
             "geometry": asdict(bundle.atlas.geometry),
             "requires_base": bundle.atlas.requires_base,
             "states": [
-                {"id": state.id, "row": state.row, "frames": state.frames, "purpose": state.purpose}
+                {
+                    "id": state.id,
+                    "row": state.row,
+                    "frames": state.frames,
+                    "purpose": state.purpose,
+                    "role": state.role,
+                }
                 for state in bundle.atlas.states
             ],
             "derivations": [asdict(d) for d in bundle.atlas.derivations],
@@ -106,6 +133,8 @@ def _show(args: argparse.Namespace) -> int:
         "style": {
             "id": bundle.style.id,
             "target_kind": bundle.style.target_kind,
+            "prompt_profile_version": bundle.style.prompt_profile_version,
+            "roles": sorted(bundle.style.roles.keys()),
             "state_requirement_keys": sorted(bundle.style.state_requirements.keys()),
             "chroma_key_candidates": [
                 asdict(candidate) for candidate in bundle.style.chroma_key.candidates
@@ -411,7 +440,10 @@ def main() -> int:
         default=[],
         help=(
             "Variant for dynamic bundles (e.g. app-icon-set), repeatable. "
-            "Format: 'id:purpose'. Example: --variant 'main:primary app icon'."
+            "Formats: 'id:purpose' for the default prompt role or "
+            "'id@role:purpose' for a style-defined semantic role. "
+            "Examples: --variant 'main:primary app icon'; "
+            "--variant 'watch@watch:watchOS silhouette'."
         ),
     )
 

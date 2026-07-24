@@ -37,6 +37,7 @@ profiles/
 | `states[].frames` | int | In `[1, geometry.columns]` |
 | `states[].durations_ms` | array of int | Length must equal `frames` |
 | `states[].purpose` | string | Used in row-prompt substitution |
+| `states[].role` | string, optional | Semantic prompt role. Defaults to `default`. Must be a stable slug matching `^[a-z0-9][a-z0-9-]{0,30}$` and must exist in the selected style before a run is prepared |
 | `states[].is_reduced_motion_first_frame` | bool, optional | Defaults to `false` |
 | `derivations[]` | array, optional | Source→target mirror rules |
 | `derivations[].target` | string | Existing state id |
@@ -59,14 +60,55 @@ profiles/
 | `description` | string | Free text |
 | `extends` | string or null | Reserved for future template inheritance; not yet implemented |
 | `target_kind` | string | Substituted into prompt templates as `{target_kind}` |
+| `prompt_profile_version` | string, optional | Non-empty prompt profile version. Defaults to `legacy` when omitted |
+| `roles` | object, optional | Map of semantic role id to role override object. Role ids must be stable slugs. Missing `roles` synthesizes `{"default": {}}`; supplied roles are normalized to include `default` deterministically |
+| `roles.<role>.target_kind` | string, optional | Non-empty replacement for style-level `target_kind` for states using this role |
+| `roles.<role>.purpose_wrapper` | string, optional | Wrapper format string for `{purpose}`. Empty string explicitly disables wrapping for the role. If omitted, exact state override then style default are considered |
+| `roles.<role>.requirements[]` | array of string, optional | Role-level requirement bullets prepended to exact state requirements |
+| `roles.<role>.forbidden_artifacts[]` | array of string, optional | If present, replaces style-level `forbidden_artifacts`; if omitted, inherits style-level forbidden artifacts |
 | `templates.base` | string | Path relative to the style dir, points at the base prompt template `.txt` file |
 | `templates.row_strip` | string | Same, for the row prompt template |
 | `prompt_blocks.house_style` | string | Substituted as `{style_notes}` when no user style notes are given |
 | `prompt_blocks.user_style_notes_join` | string | Suffix template; substitutes `{user_style_notes}` |
+| `prompt_blocks.purpose_wrapper` | string, optional | Legacy/style-level wrapper format string for `{purpose}` |
+| `prompt_blocks.purpose_wrapper_overrides` | object, optional | Legacy exact-state wrapper map. Empty string disables wrapping for that exact state |
 | `forbidden_artifacts[]` | array of string | Joined as `- bullet` lines into `{transparency_artifact_text}` |
 | `state_requirements{}` | object | Map of `state_id -> array of string` bullets. Empty for stickers. |
 | `chroma_key.selection` | string | `auto` or `manual` |
 | `chroma_key.candidates[]` | array | `{name, hex}` entries with hex like `#RRGGBB` |
+
+### Prompt role resolution
+
+Role support is backward compatible. Older style profiles that omit
+`prompt_profile_version` and `roles` load as `prompt_profile_version: "legacy"`
+with a synthesized `default` role. Older atlas states and dynamic variants
+that omit `role` use `default`.
+
+The loader is strict for new role/profile fields: role ids and atlas state
+roles must be strings matching `^[a-z0-9][a-z0-9-]{0,30}$`;
+`prompt_profile_version` must be a non-empty string; role objects must be JSON
+objects; `target_kind`, when present, must be a non-empty string; wrapper
+fields must be strings using only the `{purpose}` placeholder; and
+`requirements` / `forbidden_artifacts` must be arrays of strings.
+
+For each row prompt:
+
+1. `target_kind` comes from the role when `roles.<role>.target_kind` is
+   present; otherwise it uses style-level `target_kind`.
+2. Purpose wrapping resolves in this order: role `purpose_wrapper` first,
+   including empty string as an explicit no-wrapper override; otherwise exact
+   state `prompt_blocks.purpose_wrapper_overrides[state_id]`; otherwise
+   style-level `prompt_blocks.purpose_wrapper`; otherwise raw state purpose.
+3. Requirements are role `requirements` followed by exact
+   `state_requirements[state_id]`, with stable de-duplication preserving the
+   first occurrence.
+4. Forbidden artifacts come from role `forbidden_artifacts` when present,
+   replacing the global list; otherwise style-level `forbidden_artifacts` is
+   inherited.
+
+`prepare` validates every materialized/static state role against the selected
+style before creating the run directory. Unknown roles therefore fail before
+partial run artifacts are written.
 
 ### Template substitution variables
 
@@ -74,7 +116,7 @@ Available to both base and row templates:
 
 | Variable | Source |
 |---|---|
-| `{target_kind}` | Style profile |
+| `{target_kind}` | Role override or style profile |
 | `{display_name}` | Runtime input |
 | `{entity_notes}` | Runtime input (free-text description) |
 | `{style_notes}` | Computed: `house_style` plus optional user-style-notes suffix |
@@ -88,9 +130,41 @@ Row template only:
 | `{entity_id}` | Runtime input (slug) |
 | `{state}` | Atlas state id |
 | `{frames}` | Atlas state frame count |
-| `{purpose}` | Atlas state purpose |
-| `{state_requirement_text}` | Computed bullet list, empty if state has no requirements |
-| `{transparency_artifact_text}` | Computed bullet list of `forbidden_artifacts` |
+| `{purpose}` | Atlas state purpose after role/exact/style wrapper resolution |
+| `{state_requirement_text}` | Computed role plus state-specific bullet list, empty if no requirements |
+| `{transparency_artifact_text}` | Computed bullet list of role-level or inherited `forbidden_artifacts` |
+
+## Dynamic variant syntax and persisted prompt metadata
+
+Dynamic atlases materialize states from repeated CLI variants:
+
+- `id:purpose` creates a variant with role `default`.
+- `id@role:purpose` creates a variant with an explicit semantic prompt role.
+
+Variant ids and role ids use the same stable slug shape:
+`^[a-z0-9][a-z0-9-]{0,30}$`. Purpose is required and is capped by the engine.
+Malformed role syntax, empty role ids, multiple `@` separators, and unknown
+roles are rejected.
+
+Prepared runs persist prompt profile metadata in both `request.json` and
+`imagegen-jobs.json`:
+
+```json
+{
+  "prompt_profile": {
+    "style": "launcher-tile",
+    "version": "1.0",
+    "role": "watch"
+  }
+}
+```
+
+`request.json` writes this metadata on every materialized `states[]` entry and
+on every original dynamic `variants[]` entry. Each imagegen job writes the
+same metadata for the prompt it uses. Base jobs, when an atlas requires one,
+use default-role metadata. Manifest schema v4 adds this field, while older
+manifests without `prompt_profile` continue to load with an empty metadata
+dict.
 
 ## Extractor profile
 
