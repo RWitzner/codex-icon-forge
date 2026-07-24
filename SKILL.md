@@ -1,6 +1,6 @@
 ---
 name: icon-forge
-description: Generate icon packs and sticker packs for Slack, Discord, app stores, web favicons, and social platforms. AI image generation drives concept-to-packaged-output through configurable bundle profiles. Each bundle names an atlas geometry, a visual style, an extractor strategy, and a packager. Ships with slack-stickers (1-12 user-defined transparent emoji-sized stickers with import README; canonical dev-pack preset documented), app-icons (one design rendered at 8 platform sizes from 16x16 up to 1024x1024), and app-icon-set (1-12 distinct icon designs each at all 8 sizes). End-to-end CLI subcommands prepare, status, record, approve, reject, resume, derive, extract, and finalize drive a resumable run from concept to final files. Subagent fan-out supports parallel sticker generation while the parent agent owns recording, review decisions, and packaging. Use when building icon assets or sticker packs that need consistent visual style across multiple outputs.
+description: Generate icon packs and sticker packs for Slack, Discord, app stores, web favicons, and social platforms. AI image generation drives concept-to-packaged-output through configurable bundle profiles. Each bundle names an atlas geometry, a visual style, an extractor strategy, and a packager. Ships with slack-stickers (1-12 user-defined transparent emoji-sized stickers with import README; canonical dev-pack preset documented), app-icons (one design rendered at 8 platform sizes from 16x16 up to 1024x1024), and app-icon-set (1-12 distinct icon designs each at all 8 sizes). End-to-end CLI subcommands prepare, status, record, review, approve, reject, resume, derive, extract, and finalize drive a resumable run from concept to final files. Subagent fan-out supports parallel sticker generation while the parent agent owns recording, QA review artifacts, review decisions, and packaging. Use when building icon assets or sticker packs that need consistent visual style across multiple outputs.
 ---
 
 # Icon Forge
@@ -106,7 +106,14 @@ SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 
    For base jobs (atlases that declare `requires_base: true`; none of the three shipped bundles do, but external bundles may) this also writes `references/canonical-base.png` so subsequent row jobs use it as identity reference. The record step is concurrency-safe: a sibling lock file serialises parallel calls so no manifest update is dropped.
 
-5. **Persist review decisions.** Every recorded or derived result enters `pending` review. Approve the first gate result before generation fans out, then approve or reject each later result before extraction.
+5. **Render QA artifacts and persist review decisions.** Every recorded or derived result enters `pending` review. Run `review` before approving: it writes `qa/review-sheet.png` and `qa/review.json`, validates decoded output format, proportional strip geometry, useful size, safe `decoded/` paths, the 4096x4096 decoded pixel budget, and non-blank visible content after chroma cleanup. Not-yet-recorded future jobs are shown as skipped placeholders; at least one completed visual output must exist. Review artifacts are protected from accidental overwrite; pass `--force` to regenerate them after recording more jobs.
+
+   ```bash
+   python "$SKILL_DIR/scripts/icon_forge.py" review \
+     --run-dir "$RUN_DIR"
+   ```
+
+   Approve the first gate result before generation fans out, then approve or reject each later result before extraction.
 
    ```bash
    python "$SKILL_DIR/scripts/icon_forge.py" approve \
@@ -196,7 +203,7 @@ Default flow:
 4. Parent spawns subagents for the remaining ready jobs (the N-1 jobs left after the first-result approval).
 5. Each subagent generates one image with `$imagegen` and returns only the selected source path.
 6. Parent runs `record` for each returned source. The lock file makes parallel record calls safe.
-7. Parent presents the recorded set, persists final decisions with `approve --all` or per-job `approve`/`reject`, then runs `derive`, `extract`, and `finalize`.
+7. Parent runs `review --force`, presents `qa/review-sheet.png` plus validation status, persists final decisions with `approve --all` or per-job `approve`/`reject`, then runs `derive`, `extract`, and `finalize`.
 
 **MANDATORY parallelism question for 8+ parallel-eligible jobs.** When *any* bundle runs with 8 or more parallel-eligible jobs (e.g. `slack-stickers` with 8+ stickers, or `app-icon-set` with 8+ variants), **after the first-result approval and before generating job 2 of N, halt and ask the user explicitly** whether to fan out to 2 subagents or run sequentially. Do not autonomously decide — neither default to fan-out nor fall back to sequential without an explicit answer.
 

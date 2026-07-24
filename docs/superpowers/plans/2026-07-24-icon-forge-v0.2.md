@@ -90,7 +90,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py' -
 
 ### Behavior
 
-1. Add `review_outputs(bundle, run_dir, force=False)` that reads every recorded decoded result without altering source images.
+1. Add `review_outputs(bundle, run_dir, force=False)` that reads every visual job/decoded result without altering source images.
 2. Write:
    - `qa/review-sheet.png`
    - `qa/review.json`
@@ -99,12 +99,17 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py' -
    - source image on a light checkerboard
    - source image on a dark checkerboard
    - status marker for validation/review state
-4. `review.json` contains a versioned schema, creation timestamp, expected dimensions, source dimensions/mode/format, alpha bounding box, validation errors/warnings, and overall `ok`.
+4. `review.json` contains a versioned schema, creation timestamp, logical expected dimensions, actual source dimensions/mode/format, cleaned alpha bounding box, validation errors/warnings, and overall `ok`.
 5. Validate recorded strips against their state contract:
-   - file exists and opens
+   - expected future jobs with `status=pending` and `review_status=not-recorded` are included as skipped warning placeholders and do not fail the overall review when at least one completed visual output validates
+   - at least one completed visual output exists; otherwise fail with a top-level error
+   - manifest output paths are relative paths under `decoded/`, with no parent components, absolute paths, or symlink escapes
+   - file exists and opens for completed/rejected/stale or otherwise non-skipped jobs
    - PNG or WebP
-   - expected strip size is `cell_width * frames` by `cell_height`
-   - non-empty visible content
+   - actual decoded size does not exceed the documented 16,777,216 pixel budget
+   - expected logical strip size is `cell_width * frames` by `cell_height`
+   - actual decoded size is proportionally compatible with the logical strip size and at least as large as that logical size; high-resolution decoded masters such as a 1024x1024 single-frame Slack sticker for a 128x128 logical cell are valid
+   - non-empty visible content after applying the run's persisted chroma key and extractor cleanup where applicable
    - no extra/missing recorded state
 6. Missing outputs remain visible as errors in the JSON and placeholder cells in the sheet.
 7. Add CLI command:

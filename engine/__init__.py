@@ -26,6 +26,7 @@ from .profiles import (
     load_style_profile,
     materialize_dynamic_atlas,
 )
+from .review import review_outputs
 from .run_setup import approve_results, reject_result, resume_run
 
 __all__ = [
@@ -53,6 +54,7 @@ __all__ = [
     "load_packager_profile",
     "load_style_profile",
     "materialize_dynamic_atlas",
+    "review_outputs",
     "approve_results",
     "reject_result",
     "resume_run",

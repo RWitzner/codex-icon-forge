@@ -11,6 +11,7 @@ Subcommands:
     approve                Approve one or more recorded outputs.
     reject                 Reject one output and reopen it for generation.
     resume                 Report the next persisted workflow action.
+    review                 Render QA review sheet and validate decoded outputs.
     extract                Run the bundle's extractor over decoded strips.
     derive                 Apply a derivation rule (rare for icon bundles).
     finalize               Compose + validate + package an existing frames root.
@@ -51,6 +52,7 @@ from engine.run_setup import (  # noqa: E402
     reject_result,
     resume_run,
 )
+from engine.review import review_outputs  # noqa: E402
 from PIL import Image  # noqa: E402
 
 
@@ -240,6 +242,28 @@ def _reject(args: argparse.Namespace) -> int:
 def _resume(args: argparse.Namespace) -> int:
     print(json.dumps(resume_run(Path(args.run_dir).resolve()), indent=2))
     return 0
+
+
+def _review(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir).resolve()
+    try:
+        bundle = load_bundle_for_run(run_dir)
+        result = review_outputs(bundle, run_dir, force=args.force)
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "run_dir": str(run_dir),
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+                indent=2,
+            )
+        )
+        return 1
+    print(json.dumps(result, indent=2))
+    return 0 if result.get("ok") else 1
 
 
 def _extract(args: argparse.Namespace) -> int:
@@ -434,6 +458,14 @@ def main() -> int:
     resume = sub.add_parser("resume", help="show the next persisted workflow action")
     resume.add_argument("--run-dir", required=True)
 
+    review = sub.add_parser("review", help="render QA review sheet and validate decoded outputs")
+    review.add_argument("--run-dir", required=True)
+    review.add_argument(
+        "--force",
+        action="store_true",
+        help="Regenerate existing qa/review-sheet.png and qa/review.json.",
+    )
+
     extract = sub.add_parser("extract", help="run extractor strategy over decoded strips")
     extract.add_argument("--run-dir", required=True)
     extract.add_argument("--states", default="all", help='Comma-separated state ids or "all".')
@@ -463,6 +495,7 @@ def main() -> int:
         "approve": _approve,
         "reject": _reject,
         "resume": _resume,
+        "review": _review,
         "extract": _extract,
         "derive": _derive,
         "finalize": _finalize,

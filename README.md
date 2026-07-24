@@ -102,7 +102,7 @@ Either way the underlying engine is identical.
 
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/examples-dark.png"><img src="assets/sections/examples.png" width="32" align="absmiddle"></picture> Examples
 
-Three real runs through the pipeline, spanning two bundles and two completely different visual languages. Same `prepare → status → record → approve → extract → finalize` flow every time.
+Three real runs through the pipeline, spanning two bundles and two completely different visual languages. Same `prepare → status → record → review → approve → extract → finalize` flow every time.
 
 ### `slack-stickers` - flat-vector cartoon
 
@@ -189,7 +189,7 @@ Five stages, each owned by the parent agent. Subagents only call `$imagegen` and
 
 <div align="center">
 
-[![pipeline - prepare → status → record → approve → extract → finalize][image-pipeline]][repo-link]
+[![pipeline - prepare → status → record → review → approve → extract → finalize][image-pipeline]][repo-link]
 
 </div>
 
@@ -239,14 +239,20 @@ python "$SKILL_DIR/scripts/icon_forge.py" record \
   --run-dir "$RUN" --job-id shipping-it \
   --source "$CODEX_HOME/generated_images/.../ig_abc123.png"
 
-# 5. Review and approve the representative result. `status` now exposes the
-#    remaining jobs for generation. Record those outputs, then approve them
-#    together (or approve/reject them individually).
+# 5. Render QA artifacts, then approve the representative result. `review`
+#    writes qa/review-sheet.png and qa/review.json and exits non-zero if a
+#    decoded output is missing, corrupt, blank after chroma cleanup, wrong
+#    format, wrong strip aspect ratio, too small for the logical strip, unsafe
+#    path, or over the 4096x4096 decoded pixel budget. Future not-yet-recorded
+#    jobs are shown as skipped placeholders and do not fail the review.
+python "$SKILL_DIR/scripts/icon_forge.py" review --run-dir "$RUN"
 python "$SKILL_DIR/scripts/icon_forge.py" approve \
   --run-dir "$RUN" --job-id shipping-it \
   --note "Style and intent approved"
 
-# ...generate + record every newly ready job...
+# ...generate + record every newly ready job, then force-refresh the QA sheet
+#    before final approval...
+python "$SKILL_DIR/scripts/icon_forge.py" review --run-dir "$RUN" --force
 python "$SKILL_DIR/scripts/icon_forge.py" approve \
   --run-dir "$RUN" --all \
   --note "Final recorded set approved"
@@ -356,10 +362,11 @@ See [`references/profile-schema.md`](references/profile-schema.md) for the canon
 
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/safety-dark.png"><img src="assets/sections/safety.png" width="32" align="absmiddle"></picture> Safety guarantees
 
-The parent agent owns all writes into the run directory. Subagents only generate images and return paths; the parent calls `record`, `approve`, `reject`, `extract`, `derive`, and `finalize`. Four programmatic guards back this contract:
+The parent agent owns all writes into the run directory. Subagents only generate images and return paths; the parent calls `record`, `review`, `approve`, `reject`, `extract`, `derive`, and `finalize`. Five programmatic guards back this contract:
 
 - **Concurrency.** `record` and `derive` serialise their manifest read-modify-write under a sibling lock file (`imagegen-jobs.json.lock`). Parallel record calls from a fan-out cannot drop status updates. Manifest writes use a unique tmp filename + `os.replace` so concurrent writers cannot collide on the tmp path either.
 - **Persisted approval gate.** A multi-job run exposes only its first representative job until that result is approved. Jobs whose dependencies are not approved cannot be recorded, and `extract` refuses every selected output whose review state is not `approved`. Rejecting a gate or dependency invalidates already-recorded affected outputs so stale fan-out cannot later be extracted. `resume` reports whether the next action is `generate`, `review`, `regenerate`, or `extract`.
+- **Visual QA.** `review` writes `qa/review-sheet.png` and `qa/review.json` from decoded outputs without altering source images. Future pending jobs are shown as skipped placeholders; at least one completed visual output must be present. The sheet shows each completed visual job on light and dark checkerboards after the same chroma cleanup used by extraction. The JSON records raw source dimensions/mode/format, cleaned alpha bounds, validation errors, and the logical expected strip size. High-resolution decoded masters are valid when their aspect ratio matches the logical strip (`cell_width * frames` by `cell_height`) and they are not smaller than that logical size. Manifest `output_path` values must be relative paths under `decoded/` with no parent components or symlink escapes. Decoded images above 16,777,216 pixels are rejected before RGBA conversion or chroma cleanup.
 - **Provenance.** `record` rejects any source path that is not `$CODEX_HOME/generated_images/.../ig_*.png`, and any path inside the run directory itself. Locally drawn or post-processed images cannot be ingested as visual job outputs. The hidden `--allow-synthetic-test-source` flag bypasses the check for unit tests only - never use it in real runs.
 - **Overwrite guard.** `record` refuses to replace a job's existing decoded output unless `--force` is passed or the persisted review state is `rejected`. A stale subagent result, a double-record bug, or a parallel race cannot silently overwrite an approved image.
 
