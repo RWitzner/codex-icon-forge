@@ -141,6 +141,8 @@ class RunSetupAppIconsTests(unittest.TestCase):
             self.assertEqual(len(manifest["jobs"]), 1)
             self.assertEqual(manifest["jobs"][0]["id"], "icon")
             self.assertEqual(manifest["jobs"][0]["depends_on"], [])
+            request = json.loads((run_dir / "request.json").read_text(encoding="utf-8"))
+            self.assertEqual(request["profile_roots"], [])
 
 
 class CliEndToEndTests(unittest.TestCase):

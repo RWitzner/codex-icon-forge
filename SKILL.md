@@ -351,6 +351,35 @@ A new icon product is normally five JSON files plus two prompt templates, no eng
 
 See `references/profile-schema.md` for full field-by-field documentation.
 
+### Private profile roots
+
+Private extensions can live outside the installed skill in any directory that mirrors the bundled `profiles/` layout:
+
+```text
+private-profiles/
+├── bundles/<bundle-id>.json
+├── atlas/<atlas-id>.json
+├── style/<style-id>/profile.json
+├── style/<style-id>/templates/
+├── extractor/<extractor-id>.json
+└── packager/<packager-id>.json
+```
+
+Search precedence is repeatable CLI `--profile-dir` entries, then `ICON_FORGE_PROFILE_PATH` entries split by `os.pathsep`, then bundled profiles. First match wins. Bundle components resolve independently across the whole chain, so a private bundle can reference bundled components.
+
+```bash
+python "$SKILL_DIR/scripts/icon_forge.py" show my-private-bundle \
+  --profile-dir "$HOME/icon-forge-profiles"
+
+ICON_FORGE_PROFILE_PATH="$HOME/icon-forge-profiles:$HOME/team-profiles" \
+  python "$SKILL_DIR/scripts/icon_forge.py" prepare \
+    --bundle my-private-bundle \
+    --entity-id sample \
+    --description "Private profile smoke test"
+```
+
+Prepared runs persist absolute external roots in `request.json` as `profile_roots` and never copy private profile JSON or templates into the run directory. Downstream `review`, `extract`, `derive`, and `finalize` use those persisted roots by default; pass `--profile-dir` only for an intentional override.
+
 ## Profile schema reference
 
 See `references/profile-schema.md`.

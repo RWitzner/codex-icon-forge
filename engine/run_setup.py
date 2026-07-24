@@ -24,10 +24,13 @@ from .layout_guides import GUIDE_SUBDIR, render_all
 from .manifest import ImagegenManifest, Job, JobInput, now_iso
 from .profiles import (
     Bundle,
+    PROFILES_ROOT,
     StateSpec,
     StyleProfile,
     VariantSpec,
     materialize_dynamic_atlas,
+    load_bundle_for_run,
+    normalize_profile_roots,
     validate_prompt_roles,
 )
 from .prompts import compose_base_prompt, compose_row_prompt
@@ -50,6 +53,7 @@ class PrepareOptions:
     chroma_key: str = "auto"
     force: bool = False
     variants: list[VariantSpec] = field(default_factory=list)
+    profile_roots: list[Path] = field(default_factory=list)
 
 
 def slugify(value: str) -> str:
@@ -212,6 +216,11 @@ def _prompt_profile_metadata(style: StyleProfile, role: str) -> dict[str, str]:
 
 def prepare_run(options: PrepareOptions) -> dict[str, Any]:
     bundle = options.bundle
+    external_profile_roots = [
+        root
+        for root in normalize_profile_roots(options.profile_roots, source="prepare")
+        if root != PROFILES_ROOT.resolve()
+    ]
     if bundle.atlas.is_dynamic:
         materialised_atlas = materialize_dynamic_atlas(bundle.atlas, options.variants)
         bundle = Bundle(
@@ -292,6 +301,7 @@ def prepare_run(options: PrepareOptions) -> dict[str, Any]:
 
     request = {
         "bundle": bundle.id,
+        "profile_roots": [str(root) for root in external_profile_roots],
         "atlas": bundle.atlas.id,
         "style": bundle.style.id,
         "extractor": bundle.extractor.id,
@@ -703,13 +713,17 @@ def reject_result(run_dir: Path, job_id: str, note: str) -> dict[str, Any]:
         release_manifest_lock(lock)
 
 
-def derive_mirror(run_dir: Path, target_state: str, decision_note: str) -> dict[str, Any]:
+def derive_mirror(
+    run_dir: Path,
+    target_state: str,
+    decision_note: str,
+    *,
+    root=None,
+) -> dict[str, Any]:
     from .manifest import acquire_manifest_lock, load_manifest, release_manifest_lock
-    from .profiles import load_bundle
 
     run_dir = run_dir.resolve()
-    request = read_request(run_dir)
-    bundle = load_bundle(str(request["bundle"]))
+    bundle = load_bundle_for_run(run_dir, root=root)
 
     derivation = bundle.atlas.derivation_for(target_state)
     if derivation is None:

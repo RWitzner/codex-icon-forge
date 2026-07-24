@@ -356,6 +356,33 @@ Four orthogonal axes. A **bundle** names one of each.
 
 See [`references/profile-schema.md`](references/profile-schema.md) for the canonical schema documentation.
 
+### Private extension profile roots
+
+Keep private or local-only bundles outside this repository by creating a profile root with the same layout as `profiles/`:
+
+```text
+my-private-profiles/
+├── bundles/<bundle-id>.json
+├── atlas/<atlas-id>.json
+├── style/<style-id>/profile.json
+├── style/<style-id>/templates/base.txt
+├── style/<style-id>/templates/row.txt
+├── extractor/<extractor-id>.json
+└── packager/<packager-id>.json
+```
+
+Profile roots are searched in this order: repeatable CLI `--profile-dir` entries, then `ICON_FORGE_PROFILE_PATH` entries split by the platform path separator, then the bundled `profiles/` directory. First match wins, and bundle components resolve independently across the full root chain, so a private bundle may reuse bundled atlas/style/extractor/packager profiles.
+
+```bash
+python scripts/icon_forge.py bundles --profile-dir ~/icon-forge-profiles
+ICON_FORGE_PROFILE_PATH="$HOME/icon-forge-profiles:$HOME/team-profiles" \
+  python scripts/icon_forge.py show my-private-bundle
+python scripts/icon_forge.py prepare --profile-dir ~/icon-forge-profiles \
+  --bundle my-private-bundle --entity-id sample --description "Private profile smoke test"
+```
+
+`prepare` persists absolute external profile roots in `request.json` as `profile_roots` and excludes the bundled root. Later `review`, `extract`, `derive`, and `finalize` rehydrate from those persisted roots by default, so changing `ICON_FORGE_PROFILE_PATH` after preparation cannot silently change a run. Pass `--profile-dir` to a run command only when you intentionally want to override the persisted roots. Profile JSON and templates are not copied into the run folder; only root paths are recorded.
+
 <div align="right">
 
 [![][back-to-top-shield]](#readme-top)

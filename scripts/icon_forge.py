@@ -35,14 +35,16 @@ sys.path.insert(0, str(SKILL_DIR))
 from engine import (  # noqa: E402
     PROFILES_ROOT,
     VariantSpec,
+    list_bundle_ids,
     load_bundle,
     load_bundle_for_run,
+    resolve_profile_roots,
 )
 from engine import extractor as engine_extractor  # noqa: E402
 from engine.chroma import parse_hex_color  # noqa: E402
 from engine.manifest import load_manifest  # noqa: E402
 from engine.orchestrate import FinalizeOptions, finalize_run  # noqa: E402
-from engine.request_manifest import read_request  # noqa: E402
+from engine.request_manifest import find_request_path, read_request  # noqa: E402
 from engine.run_setup import (  # noqa: E402
     PrepareOptions,
     approve_results,
@@ -86,14 +88,20 @@ def _parse_variant_arg(raw: str) -> VariantSpec:
     return VariantSpec(id=variant_id.strip(), purpose=purpose.strip(), role=role)
 
 
-def _list_bundles(_args: argparse.Namespace) -> int:
-    bundles_dir = PROFILES_ROOT / "bundles"
-    if not bundles_dir.is_dir():
-        print(json.dumps({"ok": False, "error": f"no bundles dir at {bundles_dir}"}))
-        return 1
+def _profile_roots(args: argparse.Namespace):
+    return resolve_profile_roots(getattr(args, "profile_dir", []) or [])
+
+
+def _run_profile_roots(args: argparse.Namespace):
+    profile_dirs = getattr(args, "profile_dir", []) or []
+    return _profile_roots(args) if profile_dirs else None
+
+
+def _list_bundles(args: argparse.Namespace) -> int:
+    roots = _profile_roots(args)
     bundles = []
-    for path in sorted(bundles_dir.glob("*.json")):
-        bundle = load_bundle(path.stem)
+    for bundle_id in list_bundle_ids(roots):
+        bundle = load_bundle(bundle_id, root=roots)
         bundles.append(
             {
                 "id": bundle.id,
@@ -109,7 +117,7 @@ def _list_bundles(_args: argparse.Namespace) -> int:
 
 
 def _show(args: argparse.Namespace) -> int:
-    bundle = load_bundle(args.bundle)
+    bundle = load_bundle(args.bundle, root=_profile_roots(args))
     summary = {
         "id": bundle.id,
         "description": bundle.description,
@@ -156,7 +164,8 @@ def _show(args: argparse.Namespace) -> int:
 
 
 def _prepare(args: argparse.Namespace) -> int:
-    bundle = load_bundle(args.bundle)
+    roots = _profile_roots(args)
+    bundle = load_bundle(args.bundle, root=roots)
     references = [Path(ref) for ref in (args.reference or [])]
     variants = list(args.variant or [])
     output_dir = (
@@ -176,6 +185,7 @@ def _prepare(args: argparse.Namespace) -> int:
         chroma_key=args.chroma_key,
         force=args.force,
         variants=variants,
+        profile_roots=[root for root in roots if root != PROFILES_ROOT.resolve()],
     )
     result = prepare_run(options)
     print(json.dumps(result, indent=2))
@@ -276,7 +286,7 @@ def _resume(args: argparse.Namespace) -> int:
 def _review(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
     try:
-        bundle = load_bundle_for_run(run_dir)
+        bundle = load_bundle_for_run(run_dir, root=_run_profile_roots(args))
         result = review_outputs(bundle, run_dir, force=args.force)
     except Exception as exc:
         print(
@@ -297,7 +307,7 @@ def _review(args: argparse.Namespace) -> int:
 
 def _extract(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
-    bundle = load_bundle_for_run(run_dir)
+    bundle = load_bundle_for_run(run_dir, root=_run_profile_roots(args))
     manifest = load_manifest(run_dir)
     request = read_request(run_dir)
     chroma_hex = request["chroma_key"]["hex"]
@@ -372,22 +382,29 @@ def _derive(args: argparse.Namespace) -> int:
         Path(args.run_dir).resolve(),
         args.target,
         args.decision_note,
+        root=_run_profile_roots(args),
     )
     print(json.dumps(result, indent=2))
     return 0
 
 
 def _finalize(args: argparse.Namespace) -> int:
-    bundle = load_bundle(args.bundle)
     output_run_dir = Path(args.output_run_dir).expanduser().resolve()
-    if bundle.atlas.is_dynamic:
-        try:
-            bundle = load_bundle_for_run(output_run_dir)
-        except FileNotFoundError as exc:
+    try:
+        find_request_path(output_run_dir)
+    except FileNotFoundError:
+        bundle = load_bundle(args.bundle, root=_profile_roots(args))
+        if bundle.atlas.is_dynamic:
             raise SystemExit(
                 f"bundle {bundle.id!r} is dynamic; finalize requires a prior "
                 f"`prepare` run at {output_run_dir} so variants can be reloaded"
-            ) from exc
+            )
+    else:
+        bundle = load_bundle_for_run(output_run_dir, root=_run_profile_roots(args))
+        if bundle.id != args.bundle:
+            raise SystemExit(
+                f"prepared run bundle {bundle.id!r} does not match --bundle {args.bundle!r}"
+            )
     overrides: dict[str, str] = {}
     if args.icon_forge_home:
         overrides["ICON_FORGE_HOME"] = args.icon_forge_home
@@ -409,12 +426,30 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("bundles", help="list available bundles")
+    bundles = sub.add_parser("bundles", help="list available bundles")
+    bundles.add_argument(
+        "--profile-dir",
+        action="append",
+        default=[],
+        help="Additional profile root; repeatable. Precedes ICON_FORGE_PROFILE_PATH and bundled profiles.",
+    )
 
     show = sub.add_parser("show", help="print bundle data")
     show.add_argument("bundle")
+    show.add_argument(
+        "--profile-dir",
+        action="append",
+        default=[],
+        help="Additional profile root; repeatable. Precedes ICON_FORGE_PROFILE_PATH and bundled profiles.",
+    )
 
     prepare = sub.add_parser("prepare", help="build run folder + prompts + manifest")
+    prepare.add_argument(
+        "--profile-dir",
+        action="append",
+        default=[],
+        help="Additional profile root; repeatable. Precedes ICON_FORGE_PROFILE_PATH and bundled profiles.",
+    )
     prepare.add_argument("--bundle", required=True)
     prepare.add_argument("--entity-id", required=True)
     prepare.add_argument("--display-name", default="")
@@ -491,6 +526,12 @@ def main() -> int:
     resume.add_argument("--run-dir", required=True)
 
     review = sub.add_parser("review", help="render QA review sheet and validate decoded outputs")
+    review.add_argument(
+        "--profile-dir",
+        action="append",
+        default=[],
+        help="Override prepared profile roots; repeatable. Precedes ICON_FORGE_PROFILE_PATH and bundled profiles.",
+    )
     review.add_argument("--run-dir", required=True)
     review.add_argument(
         "--force",
@@ -499,15 +540,33 @@ def main() -> int:
     )
 
     extract = sub.add_parser("extract", help="run extractor strategy over decoded strips")
+    extract.add_argument(
+        "--profile-dir",
+        action="append",
+        default=[],
+        help="Override prepared profile roots; repeatable. Precedes ICON_FORGE_PROFILE_PATH and bundled profiles.",
+    )
     extract.add_argument("--run-dir", required=True)
     extract.add_argument("--states", default="all", help='Comma-separated state ids or "all".')
 
     derive = sub.add_parser("derive", help="apply a derivation rule (e.g. mirror)")
+    derive.add_argument(
+        "--profile-dir",
+        action="append",
+        default=[],
+        help="Override prepared profile roots; repeatable. Precedes ICON_FORGE_PROFILE_PATH and bundled profiles.",
+    )
     derive.add_argument("--run-dir", required=True)
     derive.add_argument("--target", required=True, help="State id to derive (must have a derivation rule).")
     derive.add_argument("--decision-note", required=True, help="One-sentence rationale recorded in the manifest.")
 
     finalize = sub.add_parser("finalize", help="compose + validate + package an existing frames root")
+    finalize.add_argument(
+        "--profile-dir",
+        action="append",
+        default=[],
+        help="Override prepared/current profile roots; repeatable. Precedes ICON_FORGE_PROFILE_PATH and bundled profiles.",
+    )
     finalize.add_argument("--bundle", required=True)
     finalize.add_argument("--frames", required=True)
     finalize.add_argument("--entity-id", required=True)

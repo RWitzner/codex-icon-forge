@@ -310,6 +310,6 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py' -
    - `prepare`
    - `status`
    - `resume`
-4. Review the final diff for secrets, private paths/content, generated images, and accidental Unity/BRIK material.
+4. Review the final diff for secrets, private paths/content, generated images, and accidental project-specific material.
 5. Confirm the working tree is clean.
 6. Push `codex/icon-forge-v0.2` to `origin` and report the exact remote branch and commit hashes.

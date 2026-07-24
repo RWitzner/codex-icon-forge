@@ -19,6 +19,63 @@ profiles/
 └── bundles/<id>.json
 ```
 
+External private roots use the same layout, but the root directory itself is
+the equivalent of bundled `profiles/`; do not nest another `profiles/`
+directory unless you pass that nested directory as the root.
+
+## Profile root discovery
+
+Library loaders are deterministic by default: `load_bundle("app-icons")` and
+the kind-specific loaders read only bundled profiles unless a `root` argument is
+provided. `root` may be one path or an ordered sequence of paths. Every
+configured root must already exist as a directory.
+
+CLI profile-aware commands accept repeatable `--profile-dir` entries. Effective
+lookup order is:
+
+1. CLI `--profile-dir` roots, in supplied order.
+2. `ICON_FORGE_PROFILE_PATH` roots, split by `os.pathsep`; empty segments are ignored.
+3. Bundled `profiles/`.
+
+Roots are expanded with `~`, resolved to absolute canonical paths, and deduped
+while preserving the first occurrence. Profile IDs are file names, not paths:
+absolute IDs, IDs with path separators, and `.` or `..` are rejected before
+lookup.
+
+Each loader searches for its own file across the ordered roots:
+
+| Kind | Candidate path |
+|---|---|
+| Atlas | `atlas/<id>.json` |
+| Style | `style/<id>/profile.json` |
+| Extractor | `extractor/<id>.json` |
+| Packager | `packager/<id>.json` |
+| Bundle | `bundles/<id>.json` |
+
+First match wins for a given file. Bundle components are resolved
+independently across the full root chain, so `bundles/private.json` may live in
+a private root while its atlas, style, extractor, or packager come from bundled
+profiles. Style templates stay relative to the directory containing the matched
+style `profile.json`.
+
+`list_bundle_ids(root=...)` returns the deterministic visible union of bundle
+IDs across roots, deduped by first match. Missing profile errors list every
+candidate path searched.
+
+## Prepared run persistence
+
+`prepare` always writes `profile_roots` to `request.json`. The array contains
+absolute external roots only; bundled-only runs write `[]`, and the bundled
+root is never stored. Profile JSON, prompt templates, and other profile
+contents are not copied into the run directory.
+
+Downstream run commands (`review`, `extract`, `derive`, and `finalize`) use
+persisted `profile_roots` plus bundled fallback by default. This keeps prepared
+runs source-stable even if `ICON_FORGE_PROFILE_PATH` later changes. Supplying
+`--profile-dir` to a downstream command is treated as an intentional override.
+Legacy request manifests without `profile_roots` fall back to bundled-only
+loading.
+
 ## Atlas profile
 
 `profiles/atlas/<id>.json` — drives geometry, the state catalog, derivation rules, and layout-guide rendering.
