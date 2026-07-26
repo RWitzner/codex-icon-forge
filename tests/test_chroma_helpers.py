@@ -11,7 +11,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_DIR))
@@ -130,6 +130,72 @@ class ChromaEdgeCleanupTests(unittest.TestCase):
             len(intermediate),
             0,
             "Gaussian blur on alpha should produce intermediate values",
+        )
+
+
+class DarkFringeTests(unittest.TestCase):
+    """The blur must not resurrect alpha on pixels whose RGB was zeroed.
+
+    The sibling tests in this file use a pure-black disc and skip pixels where
+    red == 0 and blue == 0 as "legitimate black silhouette" — which makes them
+    structurally blind to a black halo. These use a saturated silhouette, so
+    any near-black partial-alpha pixel can only be the artifact.
+    """
+
+    KEY = (255, 0, 255)
+    SILHOUETTE = (250, 215, 60, 255)  # saturated yellow
+
+    def _sprite(self) -> Image.Image:
+        image = Image.new("RGBA", (200, 200), (*self.KEY, 255))
+        ImageDraw.Draw(image).ellipse((40, 40, 160, 160), fill=self.SILHOUETTE)
+        return image
+
+    @staticmethod
+    def _dark_fringe(image: Image.Image) -> tuple[int, int]:
+        pixels = image.load()
+        dark = partial = 0
+        for y in range(image.height):
+            for x in range(image.width):
+                red, green, blue, alpha = pixels[x, y]
+                if 0 < alpha < 255:
+                    partial += 1
+                    if 0.299 * red + 0.587 * green + 0.114 * blue < 32:
+                        dark += 1
+        return dark, partial
+
+    def test_no_near_black_pixels_survive_along_the_edge(self) -> None:
+        cleaned = remove_chroma_background(
+            self._sprite(),
+            self.KEY,
+            96.0,
+            alpha_erode_px=1,
+            alpha_blur_radius=1.0,
+        )
+        dark, partial = self._dark_fringe(cleaned)
+        self.assertGreater(partial, 0, "fixture produced no soft edge at all")
+        self.assertEqual(
+            dark,
+            0,
+            f"{dark} of {partial} partial-alpha pixels are near-black; the "
+            "alpha blur is reviving pixels whose RGB was zeroed",
+        )
+
+    def test_blur_still_softens_the_edge(self) -> None:
+        """Clamping must not degenerate into skipping the blur entirely."""
+
+        sprite = self._sprite()
+        unblurred = remove_chroma_background(
+            sprite, self.KEY, 96.0, alpha_erode_px=1, alpha_blur_radius=0.0
+        )
+        blurred = remove_chroma_background(
+            sprite, self.KEY, 96.0, alpha_erode_px=1, alpha_blur_radius=1.0
+        )
+        _, partial_unblurred = self._dark_fringe(unblurred)
+        _, partial_blurred = self._dark_fringe(blurred)
+        self.assertGreater(
+            partial_blurred,
+            partial_unblurred,
+            "clamped blur should still produce intermediate alpha values",
         )
 
 
