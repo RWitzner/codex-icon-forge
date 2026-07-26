@@ -498,5 +498,99 @@ class WorkflowCliTests(WorkflowFixture):
             self.assertIn("unknown state", unknown.stderr.lower())
 
 
+class ForcedRerecordInvalidationTests(WorkflowFixture):
+    """`record --force` replaces a reviewed image, so it must void approvals.
+
+    `reject` has always cascaded; `record --force` performs the same semantic
+    operation and used to cascade nothing, leaving siblings marked approved
+    against an image that no longer existed and letting `resume` report
+    `extract` for a half-old, half-new pack.
+    """
+
+    def test_forcing_the_gate_reopens_the_fanout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = root / "run"
+            self.prepare(run_dir, count=2)
+
+            gate = load_manifest(run_dir).approval_gate_job_id
+            self.assertEqual(gate, "main")
+
+            record_result(
+                run_dir,
+                "main",
+                self.source(root, "main.png", (200, 20, 20, 255)),
+                allow_synthetic_test_source=True,
+            )
+            approve_results(run_dir, job_ids=["main"], note="looks right")
+            record_result(
+                run_dir,
+                "share-ext",
+                self.source(root, "share.png", (20, 200, 20, 255)),
+                allow_synthetic_test_source=True,
+            )
+            approve_results(run_dir, job_ids=["share-ext"], note="matches")
+            self.assertEqual(resume_run(run_dir)["next_action"], "extract")
+
+            replaced = record_result(
+                run_dir,
+                "main",
+                self.source(root, "main2.png", (20, 20, 200, 255)),
+                allow_synthetic_test_source=True,
+                force=True,
+            )
+
+            self.assertEqual(replaced["invalidated_jobs"], ["share-ext"])
+
+            manifest = load_manifest(run_dir)
+            replaced_gate = manifest.job("main")
+            self.assertEqual(replaced_gate.review_status, "pending")
+            # The old approval described the previous image.
+            self.assertIsNone(replaced_gate.review_note)
+            self.assertIsNone(replaced_gate.reviewed_at)
+
+            sibling = manifest.job("share-ext")
+            self.assertEqual(sibling.status, "pending")
+            self.assertEqual(sibling.review_status, "rejected")
+            self.assertIn("approval gate", sibling.review_note or "")
+
+            self.assertNotEqual(resume_run(run_dir)["next_action"], "extract")
+
+    def test_forcing_a_non_gate_job_leaves_independent_siblings_alone(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = root / "run"
+            self.prepare(run_dir, count=2)
+
+            record_result(
+                run_dir,
+                "main",
+                self.source(root, "main.png", (200, 20, 20, 255)),
+                allow_synthetic_test_source=True,
+            )
+            approve_results(run_dir, job_ids=["main"], note="gate ok")
+            record_result(
+                run_dir,
+                "share-ext",
+                self.source(root, "share.png", (20, 200, 20, 255)),
+                allow_synthetic_test_source=True,
+            )
+            approve_results(run_dir, job_ids=["share-ext"], note="ok")
+
+            replaced = record_result(
+                run_dir,
+                "share-ext",
+                self.source(root, "share2.png", (5, 5, 5, 255)),
+                allow_synthetic_test_source=True,
+                force=True,
+            )
+
+            # share-ext is not the gate and nothing depends on it.
+            self.assertEqual(replaced["invalidated_jobs"], [])
+            manifest = load_manifest(run_dir)
+            self.assertEqual(manifest.job("main").review_status, "approved")
+            self.assertEqual(manifest.job("share-ext").review_status, "pending")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

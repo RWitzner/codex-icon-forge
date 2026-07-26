@@ -498,11 +498,26 @@ def record_result(
                 f"job {job_id!r} is not ready; current ready jobs: "
                 f"{sorted(ready_job_ids)}"
             )
+        recorded_at = now_iso()
+
+        # Replacing an already-approved image voids every approval that was
+        # granted against it, exactly as `reject` does. Without this, a forced
+        # re-record leaves siblings marked approved for an image that no longer
+        # exists, and `resume` happily reports `extract`.
+        invalidated_jobs: list[str] = []
+        if is_force_rerecord:
+            invalidated_jobs = _invalidate_dependents(
+                manifest,
+                job_id,
+                reason="was replaced with a new image via `record --force`.",
+                reviewed_at=recorded_at,
+            )
+
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
 
         extras: list[str] = []
-        if job_id == "base":
+        if job.kind == "base":
             canonical = run_dir / CANONICAL_BASE_PATH
             canonical.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, canonical)
@@ -510,8 +525,16 @@ def record_result(
 
         job.status = "complete"
         job.source = str(source)
-        job.recorded_at = now_iso()
+        job.recorded_at = recorded_at
         job.review_status = "pending"
+        if is_force_rerecord:
+            # A forced re-record replaces an image that was already reviewed,
+            # so the stored decision describes a file that no longer exists —
+            # leaving it would show an approval note on a pending result.
+            # A re-record *after a rejection* is the opposite case: that note
+            # is the correction brief for this attempt, so it is preserved.
+            job.reviewed_at = None
+            job.review_note = None
         manifest.save(run_dir)
 
         return {
@@ -520,6 +543,7 @@ def record_result(
             "decoded_path": str(target),
             "additional_writes": extras,
             "source_provenance": source_provenance,
+            "invalidated_jobs": invalidated_jobs,
             "next_ready_jobs": [j.id for j in manifest.ready_jobs()],
         }
     finally:
@@ -642,6 +666,68 @@ def approve_results(
         release_manifest_lock(lock)
 
 
+def _dependent_closure(manifest: ImagegenManifest, job_id: str) -> set[str]:
+    """Every job invalidated when ``job_id``'s image is replaced or rejected.
+
+    Transitive over ``depends_on``, plus — when ``job_id`` is the approval
+    gate — the whole non-base fan-out, because those jobs were only unblocked
+    by a human approving this specific image.
+    """
+
+    affected_ids: set[str] = set()
+    pending_dependencies = [job_id]
+    while pending_dependencies:
+        dependency_id = pending_dependencies.pop(0)
+        for candidate in manifest.jobs:
+            if candidate.id in affected_ids or candidate.id == job_id:
+                continue
+            if dependency_id in candidate.depends_on:
+                affected_ids.add(candidate.id)
+                pending_dependencies.append(candidate.id)
+
+    if job_id == manifest.approval_gate_job_id:
+        affected_ids.update(
+            candidate.id
+            for candidate in manifest.jobs
+            if candidate.id != job_id and candidate.kind != "base"
+        )
+    return affected_ids
+
+
+def _invalidate_dependents(
+    manifest: ImagegenManifest,
+    job_id: str,
+    *,
+    reason: str,
+    reviewed_at: str,
+) -> list[str]:
+    """Re-open every recorded job whose approval no longer means anything.
+
+    Shared by ``reject_result`` and by ``record_result``'s force path: both
+    replace the image behind an already-reviewed job, so both have to void the
+    approvals that were granted against the old one.
+    """
+
+    affected_ids = _dependent_closure(manifest, job_id)
+    relationship = (
+        "approval gate" if job_id == manifest.approval_gate_job_id else "dependency"
+    )
+    invalidated_jobs: list[str] = []
+    for candidate in manifest.jobs:
+        if candidate.id not in affected_ids or candidate.status != "complete":
+            continue
+        candidate.status = "pending"
+        candidate.review_status = "rejected"
+        candidate.reviewed_at = reviewed_at
+        candidate.review_note = (
+            f"Invalidated because {relationship} {job_id!r} {reason} "
+            f"Regenerate through the affected workflow after {job_id!r} "
+            "is approved."
+        )
+        invalidated_jobs.append(candidate.id)
+    return invalidated_jobs
+
+
 def reject_result(run_dir: Path, job_id: str, note: str) -> dict[str, Any]:
     """Reject a recorded result and make that job generation-ready again."""
 
@@ -661,48 +747,18 @@ def reject_result(run_dir: Path, job_id: str, note: str) -> dict[str, Any]:
                 f"cannot reject job {job_id!r} without a recorded result"
             )
 
-        affected_ids: set[str] = set()
-        pending_dependencies = [job_id]
-        while pending_dependencies:
-            dependency_id = pending_dependencies.pop(0)
-            for candidate in manifest.jobs:
-                if candidate.id in affected_ids or candidate.id == job_id:
-                    continue
-                if dependency_id in candidate.depends_on:
-                    affected_ids.add(candidate.id)
-                    pending_dependencies.append(candidate.id)
-
-        if job_id == manifest.approval_gate_job_id:
-            affected_ids.update(
-                candidate.id
-                for candidate in manifest.jobs
-                if candidate.id != job_id and candidate.kind != "base"
-            )
-
         reviewed_at = now_iso()
+        invalidated_jobs = _invalidate_dependents(
+            manifest,
+            job_id,
+            reason=f"was rejected: {review_note}",
+            reviewed_at=reviewed_at,
+        )
+
         job.status = "pending"
         job.review_status = "rejected"
         job.reviewed_at = reviewed_at
         job.review_note = review_note
-
-        invalidated_jobs: list[str] = []
-        for candidate in manifest.jobs:
-            if candidate.id not in affected_ids or candidate.status != "complete":
-                continue
-            candidate.status = "pending"
-            candidate.review_status = "rejected"
-            candidate.reviewed_at = reviewed_at
-            relationship = (
-                "approval gate"
-                if job_id == manifest.approval_gate_job_id
-                else "dependency"
-            )
-            candidate.review_note = (
-                f"Invalidated because {relationship} {job_id!r} was rejected: "
-                f"{review_note} Regenerate through the affected workflow after "
-                f"{job_id!r} is approved."
-            )
-            invalidated_jobs.append(candidate.id)
 
         manifest.save(run_dir)
         summary = _resume_summary(manifest)
