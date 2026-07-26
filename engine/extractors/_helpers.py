@@ -3,10 +3,10 @@
 Two utilities used by every chroma-key-aware extractor:
 
 * ``remove_chroma_background`` turns flat chroma-key pixels transparent
-  and applies an alpha-only edge cleanup pass (erode + Gaussian blur) to
-  remove anti-aliased halo pixels that the colour-distance test alone
-  cannot catch. RGB is left untouched so legitimate design colours are
-  never altered.
+  and applies an edge cleanup pass (erode + premultiplied Gaussian blur)
+  to remove anti-aliased halo pixels that the colour-distance test alone
+  cannot catch. Fully opaque pixels keep their RGB bit-exact; partial-alpha
+  fringe pixels are rewritten, which is what stops the edge going black.
 * ``fit_to_cell`` crops to the non-transparent bounding box, scales the
   result to fit a target cell with safe padding, and centres it.
 """
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image, ImageFilter
 
 
 def color_distance(red: int, green: int, blue: int, key: tuple[int, int, int]) -> float:
@@ -40,13 +40,15 @@ def remove_chroma_background(
     sizes. The alpha-only erode + blur pass shrinks the alpha mask by
     ``alpha_erode_px`` pixels and softens its edge with a Gaussian blur.
 
-    To avoid a magenta halo, RGB is also zeroed wherever alpha drops to 0
-    (both at threshold time and after erosion). The visible silhouette's
-    RGB inside the alpha mask is left untouched.
+    RGB is zeroed wherever alpha drops to 0, both at threshold time and after
+    erosion, so no chroma colour survives in transparent pixels.
 
-    The blur is clamped so it can only lower alpha. Left unclamped it raised
-    alpha back up on exactly those zeroed-RGB pixels, trading the magenta
-    halo for a black one — which is what the shipped examples show.
+    Contract: **fully opaque pixels keep their RGB bit-exact; partial-alpha
+    pixels are rewritten by design.** The edge blur runs in premultiplied
+    space precisely so a fringe pixel's colour comes from the silhouette
+    bleeding into it rather than from the zero written above — blurring alpha
+    alone left those pixels black, which is the halo the shipped
+    monoline-suite masters still carry.
     """
 
     rgba = image.convert("RGBA")
@@ -73,19 +75,37 @@ def remove_chroma_background(
         green_band = Image.composite(green_band, black, keep_mask)
         blue_band = Image.composite(blue_band, black, keep_mask)
 
-    if alpha_blur_radius > 0:
-        # Clamp the blur so it can only ever LOWER alpha. An unclamped
-        # Gaussian raises alpha on pixels just outside the silhouette, whose
-        # RGB was zeroed above — reviving them paints a dark ring. Measured on
-        # a saturated disc: 548 of 1068 partial-alpha pixels came back
-        # near-black; clamped, none do. The same ring is visible in the
-        # shipped monoline-suite masters (1258-1798 dark fringe pixels each).
-        alpha_band = ImageChops.darker(
-            alpha_band,
-            alpha_band.filter(ImageFilter.GaussianBlur(radius=alpha_blur_radius)),
-        )
+    if alpha_blur_radius <= 0:
+        return Image.merge("RGBA", (red_band, green_band, blue_band, alpha_band))
 
-    return Image.merge("RGBA", (red_band, green_band, blue_band, alpha_band))
+    # Blur in PREMULTIPLIED space. Blurring alpha on its own desynchronises
+    # coverage from colour: the fringe gains alpha while its RGB is still the
+    # zero written above, which is what painted a black ring. In 'RGBa' the
+    # same Gaussian carries colour and coverage through one operator, so a
+    # fringe pixel takes its colour from the silhouette that is bleeding into
+    # it, weighted by how much of it is there.
+    #
+    # Note: getchannel("A") raises ValueError on 'RGBa'; split positionally.
+    solid_mask = alpha_band.point(lambda value: 255 if value == 255 else 0)
+    merged = Image.merge("RGBA", (red_band, green_band, blue_band, alpha_band))
+    blurred = (
+        merged.convert("RGBa")
+        .filter(ImageFilter.GaussianBlur(radius=alpha_blur_radius))
+        .convert("RGBA")
+    )
+    blur_r, blur_g, blur_b, blur_a = blurred.split()
+
+    # The blur is an edge treatment: restore the solid interior bit-exact so
+    # it cannot soften the artwork itself.
+    return Image.merge(
+        "RGBA",
+        (
+            Image.composite(red_band, blur_r, solid_mask),
+            Image.composite(green_band, blur_g, solid_mask),
+            Image.composite(blue_band, blur_b, solid_mask),
+            Image.composite(alpha_band, blur_a, solid_mask),
+        ),
+    )
 
 
 DEFAULT_CELL_PADDING_PX = 10

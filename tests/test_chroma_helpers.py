@@ -180,6 +180,75 @@ class DarkFringeTests(unittest.TestCase):
             "alpha blur is reviving pixels whose RGB was zeroed",
         )
 
+    def test_edge_composites_close_to_the_silhouette_colour(self) -> None:
+        """The real requirement: the edge must look like the artwork.
+
+        Counting near-black pixels only catches the failure once it is total.
+        Compositing the result against white and black and comparing to an
+        ideal built from the same alpha with the true colour measures how far
+        the fringe is from correct, whatever direction it is wrong in.
+        """
+
+        cleaned = remove_chroma_background(
+            self._sprite(), self.KEY, 96.0, alpha_erode_px=1, alpha_blur_radius=1.0
+        )
+        ideal = Image.merge(
+            "RGBA",
+            (
+                *Image.new("RGB", cleaned.size, self.SILHOUETTE[:3]).split(),
+                cleaned.getchannel("A"),
+            ),
+        )
+        for backdrop in ((255, 255, 255), (0, 0, 0)):
+            plate_a = Image.new("RGBA", cleaned.size, (*backdrop, 255))
+            plate_a.alpha_composite(cleaned)
+            plate_b = Image.new("RGBA", cleaned.size, (*backdrop, 255))
+            plate_b.alpha_composite(ideal)
+            worst = max(
+                max(abs(x - y) for x, y in zip(p, q))
+                for p, q in zip(
+                    plate_a.convert("RGB").getdata(), plate_b.convert("RGB").getdata()
+                )
+            )
+            self.assertLess(
+                worst, 24, f"fringe is {worst}/255 off the silhouette on {backdrop}"
+            )
+
+    def test_opaque_silhouette_rgb_is_never_overwritten(self) -> None:
+        """Guards the solid-interior restore; without it the artwork blurs."""
+
+        image = Image.new("RGBA", (200, 200), (*self.KEY, 255))
+        draw = ImageDraw.Draw(image)
+        draw.ellipse((40, 40, 160, 160), fill=(255, 140, 30, 255))
+        draw.rectangle((95, 60, 105, 140), fill=(0, 60, 255, 255))
+        cleaned = remove_chroma_background(
+            image, self.KEY, 96.0, alpha_erode_px=1, alpha_blur_radius=1.0
+        )
+
+        source = image.load()
+        result = cleaned.load()
+        for y in range(image.height):
+            for x in range(image.width):
+                if result[x, y][3] == 255:
+                    self.assertEqual(
+                        result[x, y][:3],
+                        source[x, y][:3],
+                        f"opaque pixel at {(x, y)} was rewritten",
+                    )
+
+    def test_transparent_pixels_carry_no_colour(self) -> None:
+        """fit_to_cell's getbbox() depends on this, as does WebP encoding."""
+
+        cleaned = remove_chroma_background(
+            self._sprite(), self.KEY, 96.0, alpha_erode_px=1, alpha_blur_radius=1.0
+        )
+        pixels = cleaned.load()
+        for y in range(cleaned.height):
+            for x in range(cleaned.width):
+                red, green, blue, alpha = pixels[x, y]
+                if alpha == 0:
+                    self.assertEqual((red, green, blue), (0, 0, 0))
+
     def test_blur_still_softens_the_edge(self) -> None:
         """Clamping must not degenerate into skipping the blur entirely."""
 
