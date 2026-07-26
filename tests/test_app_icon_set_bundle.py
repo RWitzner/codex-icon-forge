@@ -108,7 +108,12 @@ class AppIconSetBundleTests(unittest.TestCase):
             self.assertEqual(result["stage"], "package")
             pkg = result["package"]
             self.assertEqual(pkg["sizes"], EXPECTED_SIZES)
-            self.assertEqual(pkg["file_count"], len(variants) * len(EXPECTED_SIZES) + 1)
+            # transparent files at every size, plus one flattened 1024 per
+            # variant for stores that reject an alpha channel, plus the README.
+            expected_files = (
+                len(variants) * len(EXPECTED_SIZES) + len(variants) + 1
+            )
+            self.assertEqual(pkg["file_count"], expected_files)
 
             family_root = sprite_home / "app-icon-sets" / "myapp"
             self.assertTrue(family_root.is_dir())
@@ -122,6 +127,16 @@ class AppIconSetBundleTests(unittest.TestCase):
                         self.assertEqual(image.size, (size, size))
                         self.assertEqual(image.format, "PNG")
 
+                # App Store Connect rejects icons carrying an alpha channel
+                # (ITMS-90717), so the flattened copy must have none at all.
+                opaque = variant_dir / f"{variant.id}-1024-opaque.png"
+                self.assertTrue(opaque.is_file(), msg=f"missing {opaque}")
+                with Image.open(opaque) as image:
+                    self.assertEqual(image.size, (1024, 1024))
+                    self.assertEqual(image.format, "PNG")
+                    self.assertEqual(image.mode, "RGB")
+                    self.assertNotIn("A", image.getbands())
+
             readme_path = family_root / "README.md"
             self.assertTrue(readme_path.is_file())
             readme = readme_path.read_text(encoding="utf-8")
@@ -129,6 +144,9 @@ class AppIconSetBundleTests(unittest.TestCase):
             self.assertIn("3", readme)  # variant count
             for variant in variants:
                 self.assertIn(f"`{variant.id}`", readme)
+            # The README must not send users to the transparent 1024 file.
+            self.assertIn("-1024-opaque.png", readme)
+            self.assertIn(f"{expected_files} files total", readme)
 
 
 if __name__ == "__main__":

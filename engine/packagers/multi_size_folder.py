@@ -15,6 +15,14 @@ Profile params:
   readme_filename    optional. If set, render a README from readme_template.
   readme_template    optional. May use {display_name}, {description},
                      {entity_id}, {state_list}, {size_list}, {file_count}.
+  flatten_background optional #RRGGBB. When set, an extra opaque copy is
+                     written for each size in flatten_sizes. Stores that
+                     reject an alpha channel (App Store Connect, ITMS-90717)
+                     need this; the transparent files stay untouched.
+  flatten_sizes      optional list of sizes to flatten. Defaults to the
+                     largest entry in `sizes`. Every entry must be in `sizes`.
+  flatten_naming     optional filename template for the flattened copies.
+                     Defaults to `naming` with "-opaque" before the suffix.
 """
 
 from __future__ import annotations
@@ -24,10 +32,65 @@ from typing import Any
 
 from PIL import Image
 
+from ..chroma import parse_hex_color
 from ..packager import PackageContext, register, resolve_output_root
 from ..profiles import AtlasProfile, PackagerProfile
 
 _DEFAULT_NAMING = "{state}-{size}.png"
+
+
+def _default_flatten_naming(naming: str) -> str:
+    stem, dot, suffix = naming.rpartition(".")
+    if not dot:
+        return naming + "-opaque"
+    return f"{stem}-opaque.{suffix}"
+
+
+def _flatten_config(
+    profile: PackagerProfile, sizes: list[int], naming: str
+) -> tuple[tuple[int, int, int] | None, set[int], str]:
+    """Resolve the flatten params, or (None, set(), naming) when disabled."""
+
+    raw_background = profile.params.get("flatten_background")
+    if raw_background in (None, "", False):
+        return None, set(), naming
+
+    background = parse_hex_color(str(raw_background))
+
+    raw_sizes = profile.params.get("flatten_sizes")
+    if raw_sizes is None:
+        flatten_sizes = {max(sizes)}
+    else:
+        if not isinstance(raw_sizes, list) or not raw_sizes:
+            raise ValueError(
+                f"packager profile {profile.id!r}: 'flatten_sizes' must be a "
+                "non-empty list when present"
+            )
+        flatten_sizes = {int(value) for value in raw_sizes}
+        unknown = sorted(flatten_sizes - set(sizes))
+        if unknown:
+            raise ValueError(
+                f"packager profile {profile.id!r}: flatten_sizes {unknown} are "
+                f"not in sizes {sizes}"
+            )
+
+    flatten_naming = str(
+        profile.params.get("flatten_naming") or _default_flatten_naming(naming)
+    )
+    if flatten_naming == naming:
+        raise ValueError(
+            f"packager profile {profile.id!r}: 'flatten_naming' must differ from "
+            "'naming', otherwise the opaque copy overwrites the transparent one"
+        )
+    return background, flatten_sizes, flatten_naming
+
+
+def _flattened(image: Image.Image, background: tuple[int, int, int]) -> Image.Image:
+    """Composite onto a solid background and drop the alpha channel."""
+
+    plate = Image.new("RGBA", image.size, (*background, 255))
+    plate.alpha_composite(image)
+    return plate.convert("RGB")
 
 
 def _locate_source_atlas(run_dir: Path) -> Path:
@@ -92,6 +155,10 @@ def _multi_size_folder(
         raise ValueError(f"image_format must be PNG or WEBP, got {image_format!r}")
     naming = str(profile.params.get("naming", _DEFAULT_NAMING))
 
+    flatten_background, flatten_sizes, flatten_naming = _flatten_config(
+        profile, sizes, naming
+    )
+
     output_dir = resolve_output_root(profile, context)
     readme_filename = profile.params.get("readme_filename")
     readme_path = output_dir / readme_filename if readme_filename else None
@@ -100,6 +167,7 @@ def _multi_size_folder(
     geometry = atlas.geometry
 
     targets: list[Path] = []
+    flatten_targets: list[Path] = []
     for state in atlas.states:
         for size in sizes:
             target = output_dir / naming.format(
@@ -108,9 +176,18 @@ def _multi_size_folder(
                 size=size,
             )
             targets.append(target)
+            if size in flatten_sizes:
+                flatten_targets.append(
+                    output_dir
+                    / flatten_naming.format(
+                        entity_id=context.entity_id,
+                        state=state.id,
+                        size=size,
+                    )
+                )
 
     if not force:
-        existing = [t for t in targets if t.exists()]
+        existing = [t for t in (*targets, *flatten_targets) if t.exists()]
         if existing:
             raise FileExistsError(
                 f"{output_dir} already contains {len(existing)} packaged files; "
@@ -128,6 +205,7 @@ def _multi_size_folder(
         atlas_image = opened.convert("RGBA")
 
     target_iter = iter(targets)
+    flatten_iter = iter(flatten_targets)
     for state in atlas.states:
         left = 0
         top = state.row * geometry.cell_height
@@ -144,14 +222,33 @@ def _multi_size_folder(
                 resized.save(target, format="PNG")
             written.append(str(target))
 
+            if flatten_background is not None and size in flatten_sizes:
+                flat_target = next(flatten_iter)
+                flat_target.parent.mkdir(parents=True, exist_ok=True)
+                flat = _flattened(resized, flatten_background)
+                if image_format == "WEBP":
+                    flat.save(
+                        flat_target,
+                        format="WEBP",
+                        lossless=True,
+                        quality=100,
+                        method=6,
+                    )
+                else:
+                    flat.save(flat_target, format="PNG")
+                written.append(str(flat_target))
+
     if readme_path is not None and profile.params.get("readme_template"):
         readme_text = _render_readme(
             str(profile.params["readme_template"]),
             context=context,
             atlas=atlas,
             sizes=sizes,
-            file_count=len(written),
+            # The README counts itself: it is written immediately below, so the
+            # number it quotes must match what the directory ends up holding.
+            file_count=len(written) + 1,
         )
+        readme_path.parent.mkdir(parents=True, exist_ok=True)
         readme_path.write_text(readme_text, encoding="utf-8")
         written.append(str(readme_path))
 
