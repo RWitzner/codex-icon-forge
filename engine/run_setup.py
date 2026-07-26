@@ -56,11 +56,42 @@ class PrepareOptions:
     profile_roots: list[Path] = field(default_factory=list)
 
 
+_ENTITY_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+
+
 def slugify(value: str) -> str:
     value = value.strip().lower()
     value = re.sub(r"[^a-z0-9]+", "-", value)
     value = re.sub(r"-{2,}", "-", value)
     return value.strip("-")
+
+
+def validate_entity_id(value: str) -> str:
+    """Reject entity ids that would land run or packaged output off-target.
+
+    ``entity_id`` is interpolated into the run folder path and into every
+    packager ``output_root`` template, so a value containing ``..`` or a path
+    separator silently relocates the whole pack, and spaces or capitals
+    produce directories nobody was told about. Variant ids, profile ids, style
+    template paths and manifest output paths are all already constrained this
+    way; this closes the one remaining free-form path input.
+
+    Rejects rather than slugifies: an agent that guessed the id from a product
+    name should be told, not silently corrected into a different output path.
+    """
+
+    if isinstance(value, str) and _ENTITY_ID_PATTERN.match(value):
+        return value
+    suggestion = slugify(value) if isinstance(value, str) else ""
+    hint = (
+        f" Did you mean {suggestion!r}?"
+        if suggestion and _ENTITY_ID_PATTERN.match(suggestion)
+        else ""
+    )
+    raise ValueError(
+        f"invalid entity id {value!r}: must match [a-z0-9][a-z0-9-]{{0,63}} "
+        f"(lowercase, digits and hyphens only).{hint}"
+    )
 
 
 def default_output_dir(entity_id: str) -> Path:
@@ -215,6 +246,7 @@ def _prompt_profile_metadata(style: StyleProfile, role: str) -> dict[str, str]:
 
 
 def prepare_run(options: PrepareOptions) -> dict[str, Any]:
+    validate_entity_id(options.entity_id)
     bundle = options.bundle
     external_profile_roots = [
         root

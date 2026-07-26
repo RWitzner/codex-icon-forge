@@ -15,6 +15,7 @@ from typing import Any
 from . import composer, validator
 from .packager import PackageContext, package
 from .profiles import Bundle
+from .run_setup import validate_entity_id
 
 
 @dataclass
@@ -31,6 +32,7 @@ class FinalizeOptions:
 
 
 def finalize_run(bundle: Bundle, options: FinalizeOptions) -> dict[str, Any]:
+    validate_entity_id(options.entity_id)
     options.output_run_dir.mkdir(parents=True, exist_ok=True)
     final_dir = options.output_run_dir / "final"
     final_dir.mkdir(parents=True, exist_ok=True)

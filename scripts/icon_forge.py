@@ -54,6 +54,7 @@ from engine.run_setup import (  # noqa: E402
     record_result,
     reject_result,
     resume_run,
+    validate_entity_id,
 )
 from engine.review import review_outputs  # noqa: E402
 from PIL import Image  # noqa: E402
@@ -86,6 +87,15 @@ def _parse_variant_arg(raw: str) -> VariantSpec:
     else:
         variant_id = variant_head
     return VariantSpec(id=variant_id.strip(), purpose=purpose.strip(), role=role)
+
+
+def _entity_id_arg(raw: str) -> str:
+    """Fail at parse time with a usage error, not a traceback mid-run."""
+
+    try:
+        return validate_entity_id(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _profile_roots(args: argparse.Namespace):
@@ -451,7 +461,7 @@ def main() -> int:
         help="Additional profile root; repeatable. Precedes ICON_FORGE_PROFILE_PATH and bundled profiles.",
     )
     prepare.add_argument("--bundle", required=True)
-    prepare.add_argument("--entity-id", required=True)
+    prepare.add_argument("--entity-id", required=True, type=_entity_id_arg)
     prepare.add_argument("--display-name", default="")
     prepare.add_argument("--description", required=True)
     prepare.add_argument("--notes", default="", help="Stable description used in prompts.")
@@ -569,7 +579,7 @@ def main() -> int:
     )
     finalize.add_argument("--bundle", required=True)
     finalize.add_argument("--frames", required=True)
-    finalize.add_argument("--entity-id", required=True)
+    finalize.add_argument("--entity-id", required=True, type=_entity_id_arg)
     finalize.add_argument("--display-name", default="")
     finalize.add_argument("--description", required=True)
     finalize.add_argument("--output-run-dir", required=True)

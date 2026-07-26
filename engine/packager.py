@@ -99,6 +99,14 @@ def _expand_env(template: str, context: PackageContext) -> str:
     return expanded
 
 
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
 def _format_with_context(template: str, context: PackageContext) -> str:
     return template.format(
         entity_id=context.entity_id,
@@ -110,7 +118,23 @@ def _format_with_context(template: str, context: PackageContext) -> str:
 def resolve_output_root(profile: PackagerProfile, context: PackageContext) -> Path:
     expanded = _expand_env(profile.output_root, context)
     formatted = _format_with_context(expanded, context)
-    return Path(formatted).expanduser().resolve()
+    resolved = Path(formatted).expanduser().resolve()
+
+    # Everything before the first placeholder is fixed by the profile author.
+    # Substituted values must not be able to climb out of it — otherwise an
+    # entity id containing `..` relocates the whole packaged pack somewhere the
+    # user was never told about. Callers validate their inputs; this is the
+    # backstop at the point where files are actually written.
+    static_prefix = expanded.split("{", 1)[0]
+    if static_prefix and static_prefix != expanded:
+        root = Path(static_prefix).expanduser().resolve()
+        if not _is_relative_to(resolved, root):
+            raise ValueError(
+                f"packager profile {profile.id!r} resolved its output root to "
+                f"{resolved}, which escapes {root}. Check the substituted "
+                "values (entity_id) for path separators or '..' components."
+            )
+    return resolved
 
 
 def render_schema(value: Any, context: PackageContext) -> Any:
