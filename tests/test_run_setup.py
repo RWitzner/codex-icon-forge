@@ -253,7 +253,12 @@ class ConcurrentRecordTests(unittest.TestCase):
                 sources[gate_job],
                 allow_synthetic_test_source=True,
             )
-            approve_results(run_dir, job_ids=[gate_job], note="Concurrency gate.")
+            approve_results(
+                run_dir,
+                job_ids=[gate_job],
+                note="Concurrency gate.",
+                skip_review=True,
+            )
 
             fanout_jobs = jobs[1:]
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(fanout_jobs)) as pool:

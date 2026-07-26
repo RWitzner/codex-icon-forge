@@ -551,7 +551,9 @@ class ProfileCliAndRunContinuityTests(unittest.TestCase):
             )
             self.assertEqual(review_proc.returncode, 0, msg=review_proc.stderr + review_proc.stdout)
 
-            approve_results(run_dir, job_ids=["icon"], note="approved")
+            approve_results(
+                run_dir, job_ids=["icon"], note="approved", skip_review=True
+            )
             extract_proc = self._run_cli(
                 "extract",
                 "--run-dir",
@@ -584,7 +586,9 @@ class ProfileCliAndRunContinuityTests(unittest.TestCase):
             )
             _seed_record_source(source, size=32)
             record_result(run_dir, "left", source, allow_synthetic_test_source=True)
-            approve_results(run_dir, job_ids=["left"], note="source approved")
+            approve_results(
+                run_dir, job_ids=["left"], note="source approved", skip_review=True
+            )
 
             with mock.patch.dict(os.environ, {"ICON_FORGE_PROFILE_PATH": ""}):
                 result = derive_mirror(run_dir, "right", "mirror accepted")

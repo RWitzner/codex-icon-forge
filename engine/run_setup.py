@@ -38,6 +38,9 @@ from .request_manifest import read_request, write_request
 
 CANONICAL_BASE_PATH = "references/canonical-base.png"
 BASE_DECODED_PATH = "decoded/base.png"
+# Kept as a literal rather than importing engine.review, which pulls in the
+# whole QA-rendering stack for what is a filename.
+REVIEW_JSON_RELATIVE = "review.json"
 
 
 @dataclass
@@ -645,13 +648,85 @@ def resume_run(run_dir: Path) -> dict[str, Any]:
     return _resume_summary(load_manifest(run_dir.resolve()))
 
 
+def _parse_iso(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _review_blockers(run_dir: Path, jobs: list[Job]) -> list[str]:
+    """Reasons the given jobs must not be approved yet.
+
+    ``review`` validates decoded geometry, format, pixel budget, decoded-path
+    safety and non-blank content, but nothing used to read its verdict back —
+    so ``record -> approve --all -> extract -> finalize`` sailed past every one
+    of those checks. Approval is the point where a human takes responsibility
+    for an image, so that is where the verdict has to be consulted.
+    """
+
+    review_path = run_dir / "qa" / REVIEW_JSON_RELATIVE
+    if not review_path.is_file():
+        return [
+            f"no review artifact at {review_path}. Run "
+            f"`review --run-dir {run_dir}` first, or `approve --skip-review` "
+            "to approve without it."
+        ]
+    try:
+        payload = json.loads(review_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"cannot read {review_path}: {exc}"]
+
+    entries = {
+        str(entry.get("job_id")): entry
+        for entry in payload.get("jobs", [])
+        if isinstance(entry, dict)
+    }
+    reviewed_at = _parse_iso(payload.get("created_at"))
+
+    blockers: list[str] = []
+    for job in jobs:
+        entry = entries.get(job.id)
+        if entry is None:
+            blockers.append(f"{job.id}: not covered by the review artifact")
+            continue
+        status = entry.get("status")
+        if status == "error":
+            detail = "; ".join(entry.get("errors") or []) or "validation failed"
+            blockers.append(f"{job.id}: review reported errors ({detail})")
+            continue
+        if status != "validated":
+            blockers.append(
+                f"{job.id}: review status is {status!r}, not 'validated'"
+            )
+            continue
+        recorded_at = _parse_iso(job.recorded_at)
+        if reviewed_at is not None and recorded_at is not None and recorded_at > reviewed_at:
+            blockers.append(
+                f"{job.id}: recorded at {job.recorded_at}, after the review "
+                f"artifact was written at {payload.get('created_at')}. The "
+                "sheet shows a different image — re-run `review --force`."
+            )
+    return blockers
+
+
 def approve_results(
     run_dir: Path,
     job_ids: list[str] | None = None,
     approve_all: bool = False,
     note: str = "",
+    *,
+    skip_review: bool = False,
 ) -> dict[str, Any]:
-    """Approve one or more recorded results under the manifest lock."""
+    """Approve one or more recorded results under the manifest lock.
+
+    Refuses to approve anything the review step has not validated, unless
+    ``skip_review`` is set. The escape hatch exists because review can fail for
+    reasons unrelated to the artwork (a moved profile root, a corrupt sheet),
+    and a run should never become unfinishable.
+    """
 
     from .manifest import acquire_manifest_lock, load_manifest, release_manifest_lock
 
@@ -680,6 +755,14 @@ def approve_results(
                 "cannot approve jobs without recorded results: "
                 + ", ".join(unavailable)
             )
+
+        if not skip_review:
+            blockers = _review_blockers(run_dir, selected)
+            if blockers:
+                raise ValueError(
+                    "cannot approve until review validates these results:\n  "
+                    + "\n  ".join(blockers)
+                )
 
         reviewed_at = now_iso()
         review_note = note.strip()

@@ -460,7 +460,7 @@ ICON_FORGE_PROFILE_PATH="$HOME/icon-forge-profiles:$HOME/team-profiles" \
 
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/safety-dark.png"><img src="assets/sections/safety.png" width="32" align="absmiddle"></picture> Safety guarantees
 
-The parent agent owns all writes into the run directory. Subagents only generate images and return paths; the parent calls `record`, `review`, `approve`, `reject`, `extract`, `derive`, and `finalize`. Five programmatic guards back this contract, plus one advisory step:
+The parent agent owns all writes into the run directory. Subagents only generate images and return paths; the parent calls `record`, `review`, `approve`, `reject`, `extract`, `derive`, and `finalize`. Six programmatic guards back this contract:
 
 - **Prompt profile metadata.** Prepared runs persist each state's style ID, prompt profile version, and semantic role in `request.json` and in every `imagegen-jobs.json` job. Older manifests without this field still load.
 - **Concurrency.** `record` and `derive` serialise their manifest read-modify-write under a sibling lock file (`imagegen-jobs.json.lock`). Parallel record calls from a fan-out cannot drop status updates. Manifest writes use a unique tmp filename + `os.replace` so concurrent writers do not collide on the tmp path either.
@@ -470,11 +470,9 @@ The parent agent owns all writes into the run directory. Subagents only generate
 - **Provenance.** `record` rejects any source path that is not `$CODEX_HOME/generated_images/.../ig_*.png`, and any path inside the run directory itself. Locally drawn or post-processed images cannot be ingested as visual job outputs. The hidden `--allow-synthetic-test-source` flag bypasses the check for unit tests only - never use it in real runs.
 - **Overwrite guard.** `record` refuses to replace a job's existing decoded output unless `--force` is passed or the persisted review state is `rejected`. A stale subagent result, a double-record bug, or a parallel race cannot silently overwrite an approved image.
 
-And one advisory step, which is deliberately *not* a gate:
-
 - **Visual QA.** `review` writes `qa/review-sheet.png` and `qa/review.json` from decoded outputs without altering source images. Future pending jobs are shown as skipped placeholders; at least one completed visual output must be present. The sheet shows each completed visual job on light and dark checkerboards after the same chroma cleanup used by extraction. The JSON records raw source dimensions/mode/format, cleaned alpha bounds, validation errors, and the logical expected strip size. High-resolution decoded masters are valid when their aspect ratio matches the logical strip (`cell_width * frames` by `cell_height`) and they are not smaller than that logical size. Manifest `output_path` values must be relative paths under `decoded/` with no parent components or symlink escapes. Decoded images above 16,777,216 pixels are rejected before RGBA conversion or chroma cleanup.
 
-  Nothing reads `qa/review.json` back: `approve` selects on recorded status alone, so a run can go `record → approve --all → extract → finalize` without `review` ever being called. Treat it as the artifact a human looks at, not as an enforced check.
+  `approve` reads that verdict back: it refuses any job with no review entry, a `skipped` or `error` entry, or an entry written *before* the image was recorded — the last case catches a sheet that shows a since-replaced image. `--skip-review` overrides, for when review itself is broken rather than the artwork.
 
 > [!IMPORTANT]
 > The provenance check is the difference between a trustworthy run folder and a polluted one. Never use `--allow-synthetic-test-source` outside of unit tests - it exists solely so the test suite can fabricate inputs without touching `$imagegen`.

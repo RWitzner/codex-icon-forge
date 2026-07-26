@@ -28,6 +28,7 @@ from engine.run_setup import (  # noqa: E402
     reject_result,
     resume_run,
 )
+from engine.review import review_outputs  # noqa: E402
 from engine import VariantSpec, load_bundle  # noqa: E402
 
 
@@ -129,7 +130,9 @@ class ReviewWorkflowTests(WorkflowFixture):
             self.assertEqual(load_manifest(run_dir).ready_jobs(), [])
             self.assertEqual(resume_run(run_dir)["next_action"], "review")
 
-            approved = approve_results(run_dir, job_ids=["main"], note="Looks good.")
+            approved = approve_results(
+                run_dir, job_ids=["main"], note="Looks good.", skip_review=True
+            )
             self.assertEqual(approved["approved_jobs"], ["main"])
             self.assertEqual(approved["ready_jobs"], ["share-ext"])
 
@@ -170,7 +173,9 @@ class ReviewWorkflowTests(WorkflowFixture):
                 self.source(root, "main.png", (200, 20, 20, 255)),
                 allow_synthetic_test_source=True,
             )
-            approve_results(run_dir, job_ids=["main"], note="Gate approved.")
+            approve_results(
+                run_dir, job_ids=["main"], note="Gate approved.", skip_review=True
+            )
             record_result(
                 run_dir,
                 "share-ext",
@@ -205,7 +210,9 @@ class ReviewWorkflowTests(WorkflowFixture):
                 original_gate,
                 allow_synthetic_test_source=True,
             )
-            approve_results(run_dir, job_ids=["main"], note="Gate approved.")
+            approve_results(
+                run_dir, job_ids=["main"], note="Gate approved.", skip_review=True
+            )
             record_result(
                 run_dir,
                 "share-ext",
@@ -216,6 +223,7 @@ class ReviewWorkflowTests(WorkflowFixture):
                 run_dir,
                 job_ids=["share-ext"],
                 note="Fanout approved.",
+                skip_review=True,
             )
             self.assertEqual(approval["approved_jobs"], ["main", "share-ext"])
             self.assertEqual(approval["newly_approved_jobs"], ["share-ext"])
@@ -244,7 +252,10 @@ class ReviewWorkflowTests(WorkflowFixture):
                 allow_synthetic_test_source=True,
             )
             approve_results(
-                run_dir, job_ids=["main"], note="Replacement gate approved."
+                run_dir,
+                job_ids=["main"],
+                note="Replacement gate approved.",
+                skip_review=True,
             )
             resumed = resume_run(run_dir)
             self.assertEqual(resumed["next_action"], "regenerate")
@@ -352,7 +363,7 @@ class ReviewWorkflowTests(WorkflowFixture):
             self.assertEqual(review["next_action"], "review")
             self.assertEqual(review["pending_review_jobs"], ["main"])
 
-            approve_results(run_dir, approve_all=True)
+            approve_results(run_dir, approve_all=True, skip_review=True)
             complete = resume_run(run_dir)
             self.assertEqual(complete["next_action"], "extract")
             self.assertEqual(complete["approved_jobs"], ["main"])
@@ -435,6 +446,25 @@ class WorkflowCliTests(WorkflowFixture):
             )
             self.assertEqual(resume["next_action"], "review")
 
+            # approve now consults qa/review.json, so the CLI flow has to run
+            # review first — which is the point of resume saying "review".
+            refused = self.run_cli(
+                "approve",
+                "--run-dir",
+                str(run_dir),
+                "--job-id",
+                "main",
+                "--note",
+                "Too early.",
+                expect_success=False,
+            )
+            self.assertNotEqual(refused.returncode, 0)
+            refusal = json.loads(refused.stdout)
+            self.assertFalse(refusal["ok"])
+            self.assertIn("no review artifact", refusal["error"])
+
+            self.run_cli("review", "--run-dir", str(run_dir))
+
             approved = json.loads(
                 self.run_cli(
                     "approve",
@@ -498,6 +528,108 @@ class WorkflowCliTests(WorkflowFixture):
             self.assertIn("unknown state", unknown.stderr.lower())
 
 
+class ApproveRequiresReviewTests(WorkflowFixture):
+    """`review` is a gate, not a suggestion.
+
+    It validates decoded geometry, format, pixel budget, decoded-path safety
+    and non-blank content — but nothing read its verdict back, so a run could
+    go record -> approve --all -> extract -> finalize past every one of those
+    checks. Approval is where a human takes responsibility for an image, so
+    that is where the verdict is consulted.
+    """
+
+    def _review(self, run_dir: Path, force: bool = False) -> None:
+        review_outputs(load_bundle("app-icon-set"), run_dir, force=force)
+
+    def test_approve_is_refused_before_review_has_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = root / "run"
+            self.prepare(run_dir, count=1)
+            record_result(
+                run_dir,
+                "main",
+                self.source(root, "main.png", (200, 20, 20, 255)),
+                allow_synthetic_test_source=True,
+            )
+
+            with self.assertRaises(ValueError) as caught:
+                approve_results(run_dir, job_ids=["main"], note="ship it")
+            self.assertIn("no review artifact", str(caught.exception))
+            self.assertEqual(
+                load_manifest(run_dir).job("main").review_status, "pending"
+            )
+
+    def test_approve_succeeds_once_review_validates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = root / "run"
+            self.prepare(run_dir, count=1)
+            record_result(
+                run_dir,
+                "main",
+                self.source(root, "main.png", (200, 20, 20, 255)),
+                allow_synthetic_test_source=True,
+            )
+            self._review(run_dir)
+
+            approve_results(run_dir, job_ids=["main"], note="ship it")
+            self.assertEqual(
+                load_manifest(run_dir).job("main").review_status, "approved"
+            )
+
+    def test_review_predating_the_recorded_image_does_not_count(self) -> None:
+        """The subtle one: reviewed, then the image was replaced underneath."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = root / "run"
+            self.prepare(run_dir, count=1)
+            record_result(
+                run_dir,
+                "main",
+                self.source(root, "main.png", (200, 20, 20, 255)),
+                allow_synthetic_test_source=True,
+            )
+            self._review(run_dir)
+            record_result(
+                run_dir,
+                "main",
+                self.source(root, "main2.png", (20, 20, 200, 255)),
+                allow_synthetic_test_source=True,
+                force=True,
+            )
+
+            with self.assertRaises(ValueError) as caught:
+                approve_results(run_dir, job_ids=["main"], note="ship it")
+            self.assertIn("re-run `review --force`", str(caught.exception))
+
+            self._review(run_dir, force=True)
+            approve_results(run_dir, job_ids=["main"], note="ship it")
+            self.assertEqual(
+                load_manifest(run_dir).job("main").review_status, "approved"
+            )
+
+    def test_skip_review_is_the_documented_escape_hatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = root / "run"
+            self.prepare(run_dir, count=1)
+            record_result(
+                run_dir,
+                "main",
+                self.source(root, "main.png", (200, 20, 20, 255)),
+                allow_synthetic_test_source=True,
+            )
+
+            approve_results(
+                run_dir, job_ids=["main"], note="review is broken", skip_review=True
+            )
+            self.assertEqual(
+                load_manifest(run_dir).job("main").review_status, "approved"
+            )
+
+
 class ForcedRerecordInvalidationTests(WorkflowFixture):
     """`record --force` replaces a reviewed image, so it must void approvals.
 
@@ -522,14 +654,18 @@ class ForcedRerecordInvalidationTests(WorkflowFixture):
                 self.source(root, "main.png", (200, 20, 20, 255)),
                 allow_synthetic_test_source=True,
             )
-            approve_results(run_dir, job_ids=["main"], note="looks right")
+            approve_results(
+                run_dir, job_ids=["main"], note="looks right", skip_review=True
+            )
             record_result(
                 run_dir,
                 "share-ext",
                 self.source(root, "share.png", (20, 200, 20, 255)),
                 allow_synthetic_test_source=True,
             )
-            approve_results(run_dir, job_ids=["share-ext"], note="matches")
+            approve_results(
+                run_dir, job_ids=["share-ext"], note="matches", skip_review=True
+            )
             self.assertEqual(resume_run(run_dir)["next_action"], "extract")
 
             replaced = record_result(
@@ -568,14 +704,18 @@ class ForcedRerecordInvalidationTests(WorkflowFixture):
                 self.source(root, "main.png", (200, 20, 20, 255)),
                 allow_synthetic_test_source=True,
             )
-            approve_results(run_dir, job_ids=["main"], note="gate ok")
+            approve_results(
+                run_dir, job_ids=["main"], note="gate ok", skip_review=True
+            )
             record_result(
                 run_dir,
                 "share-ext",
                 self.source(root, "share.png", (20, 200, 20, 255)),
                 allow_synthetic_test_source=True,
             )
-            approve_results(run_dir, job_ids=["share-ext"], note="ok")
+            approve_results(
+                run_dir, job_ids=["share-ext"], note="ok", skip_review=True
+            )
 
             replaced = record_result(
                 run_dir,

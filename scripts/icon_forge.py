@@ -268,12 +268,31 @@ def _record(args: argparse.Namespace) -> int:
 
 
 def _approve(args: argparse.Namespace) -> int:
-    result = approve_results(
-        Path(args.run_dir).resolve(),
-        job_ids=list(args.job_id or []),
-        approve_all=bool(args.approve_all),
-        note=args.note,
-    )
+    run_dir = Path(args.run_dir).resolve()
+    try:
+        result = approve_results(
+            run_dir,
+            job_ids=list(args.job_id or []),
+            approve_all=bool(args.approve_all),
+            note=args.note,
+            skip_review=bool(args.skip_review),
+        )
+    except ValueError as exc:
+        # Being refused for want of a passing review is a routine stop, not a
+        # crash — report it in the same JSON envelope `review` uses so the
+        # calling agent can read the reason instead of parsing a traceback.
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "run_dir": str(run_dir),
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+                indent=2,
+            )
+        )
+        return 1
     print(json.dumps(result, indent=2))
     return 0
 
@@ -535,6 +554,14 @@ def main() -> int:
         help="Approve every currently recorded result.",
     )
     approve.add_argument("--note", default="", help="Optional review note.")
+    approve.add_argument(
+        "--skip-review",
+        action="store_true",
+        help=(
+            "Approve without a passing qa/review.json. Escape hatch for when "
+            "review itself is broken - not for skipping the look at the image."
+        ),
+    )
 
     reject = sub.add_parser("reject", help="reject a result and reopen generation")
     reject.add_argument("--run-dir", required=True)
