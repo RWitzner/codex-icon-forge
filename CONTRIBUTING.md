@@ -7,9 +7,9 @@ usable as a drop-in folder under `~/.agents/skills/icon-forge`.
 ## Development setup
 
 ```bash
-REPO_URL="https://github.com/your-org/icon-forge.git"
+REPO_URL="https://github.com/RWitzner/codex-icon-forge.git"
 git clone "$REPO_URL"
-cd icon-forge
+cd codex-icon-forge
 python3 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.txt

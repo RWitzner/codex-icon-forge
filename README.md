@@ -388,7 +388,6 @@ Pass one `--variant id:purpose` per design (1-12 per run). IDs must match `^[a-z
   --display-name "MyApp" \
   --description "MyApp icon family" \
   --notes "modern minimalist, bold silhouette" \
-  --output-dir "$RUN" \
   --variant "main:primary app icon" \
   --variant "share-ext:share extension, simpler version" \
   --variant "watch@watch:1-bit silhouette for watchOS"
@@ -420,7 +419,7 @@ Four orthogonal axes. A **bundle** names one of each.
 1. Decide the output shape: how many designs, how many sizes per design, how files should be named on disk.
 2. Pick a packager strategy (`atlas-extract-folder` for sticker-style packs, `multi-size-folder` for multi-size icon packs, `web-brand-kit` for canonical browser/PWA assets, or write a new one).
 3. Author the five profile JSONs and two prompt templates.
-4. Add to `profiles/bundles/<your-bundle>.json` and run `python3 scripts/icon_forge.py show <your-bundle>` to verify.
+4. Add to `profiles/bundles/<your-bundle>.json` and run `"$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" show <your-bundle>` to verify.
 
 See [`references/profile-schema.md`](references/profile-schema.md) for the canonical schema documentation.
 
@@ -461,14 +460,21 @@ ICON_FORGE_PROFILE_PATH="$HOME/icon-forge-profiles:$HOME/team-profiles" \
 
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/safety-dark.png"><img src="assets/sections/safety.png" width="32" align="absmiddle"></picture> Safety guarantees
 
-The parent agent owns all writes into the run directory. Subagents only generate images and return paths; the parent calls `record`, `review`, `approve`, `reject`, `extract`, `derive`, and `finalize`. Six programmatic guards back this contract:
+The parent agent owns all writes into the run directory. Subagents only generate images and return paths; the parent calls `record`, `review`, `approve`, `reject`, `extract`, `derive`, and `finalize`. Five programmatic guards back this contract, plus one advisory step:
 
 - **Prompt profile metadata.** Prepared runs persist each state's style ID, prompt profile version, and semantic role in `request.json` and in every `imagegen-jobs.json` job. Older manifests without this field still load.
 - **Concurrency.** `record` and `derive` serialise their manifest read-modify-write under a sibling lock file (`imagegen-jobs.json.lock`). Parallel record calls from a fan-out cannot drop status updates. Manifest writes use a unique tmp filename + `os.replace` so concurrent writers do not collide on the tmp path either.
-- **Persisted approval gate.** A multi-job run exposes only its first representative job until that result is approved. Jobs whose dependencies are not approved cannot be recorded, and `extract` refuses every selected output whose review state is not `approved`. Rejecting a gate or dependency invalidates already-recorded affected outputs so stale fan-out cannot later be extracted. `resume` reports whether the next action is `generate`, `review`, `regenerate`, or `extract`.
-- **Visual QA.** `review` writes `qa/review-sheet.png` and `qa/review.json` from decoded outputs without altering source images. Future pending jobs are shown as skipped placeholders; at least one completed visual output must be present. The sheet shows each completed visual job on light and dark checkerboards after the same chroma cleanup used by extraction. The JSON records raw source dimensions/mode/format, cleaned alpha bounds, validation errors, and the logical expected strip size. High-resolution decoded masters are valid when their aspect ratio matches the logical strip (`cell_width * frames` by `cell_height`) and they are not smaller than that logical size. Manifest `output_path` values must be relative paths under `decoded/` with no parent components or symlink escapes. Decoded images above 16,777,216 pixels are rejected before RGBA conversion or chroma cleanup.
+- **Persisted approval gate.** A multi-job run exposes only its first representative job until that result is approved. Jobs whose dependencies are not approved cannot be recorded, and `extract` refuses every selected output whose review state is not `approved`. Rejecting a gate or dependency - or replacing its image with `record --force` - invalidates already-recorded affected outputs so stale fan-out cannot later be extracted. `resume` reports whether the next action is `generate`, `review`, `regenerate`, or `extract`.
+- **Output validation.** `finalize` refuses to package an atlas whose cells kept their chroma background, are empty or too sparse, sit in a column no state declares, or carry the wrong dimensions, format, or alpha channel. The near-opaque test is measured against the area a cell can actually hold after extraction padding, so it is reachable for every bundled geometry.
+
 - **Provenance.** `record` rejects any source path that is not `$CODEX_HOME/generated_images/.../ig_*.png`, and any path inside the run directory itself. Locally drawn or post-processed images cannot be ingested as visual job outputs. The hidden `--allow-synthetic-test-source` flag bypasses the check for unit tests only - never use it in real runs.
 - **Overwrite guard.** `record` refuses to replace a job's existing decoded output unless `--force` is passed or the persisted review state is `rejected`. A stale subagent result, a double-record bug, or a parallel race cannot silently overwrite an approved image.
+
+And one advisory step, which is deliberately *not* a gate:
+
+- **Visual QA.** `review` writes `qa/review-sheet.png` and `qa/review.json` from decoded outputs without altering source images. Future pending jobs are shown as skipped placeholders; at least one completed visual output must be present. The sheet shows each completed visual job on light and dark checkerboards after the same chroma cleanup used by extraction. The JSON records raw source dimensions/mode/format, cleaned alpha bounds, validation errors, and the logical expected strip size. High-resolution decoded masters are valid when their aspect ratio matches the logical strip (`cell_width * frames` by `cell_height`) and they are not smaller than that logical size. Manifest `output_path` values must be relative paths under `decoded/` with no parent components or symlink escapes. Decoded images above 16,777,216 pixels are rejected before RGBA conversion or chroma cleanup.
+
+  Nothing reads `qa/review.json` back: `approve` selects on recorded status alone, so a run can go `record → approve --all → extract → finalize` without `review` ever being called. Treat it as the artifact a human looks at, not as an enforced check.
 
 > [!IMPORTANT]
 > The provenance check is the difference between a trustworthy run folder and a polluted one. Never use `--allow-synthetic-test-source` outside of unit tests - it exists solely so the test suite can fabricate inputs without touching `$imagegen`.

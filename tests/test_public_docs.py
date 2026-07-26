@@ -50,9 +50,23 @@ class PublicDocumentationTests(unittest.TestCase):
         self.assertNotIn("`/icon-forge`", readme)
         self.assertIn("$icon-forge", metadata)
 
-        unqualified_python = re.compile(r"(?m)^(?:[A-Z_]+=\$\()?python(?:\s|$)")
-        self.assertIsNone(unqualified_python.search(readme))
-        self.assertIsNone(unqualified_python.search(skill))
+        # `scripts/icon_forge.py` imports PIL at module load, and PIL only
+        # exists in $SKILL_DIR/.venv — so every invocation in the docs has to
+        # go through "$PYTHON". The old pattern was line-anchored and so missed
+        # `python3 scripts/...` quoted inline in prose, which is exactly where
+        # it had drifted. `python3 -m venv` is the one legitimate exception:
+        # it is what creates the venv in the first place.
+        unqualified_python = re.compile(
+            r"(?<![\w/\"$])python3?\s+(?!-m\s+venv)(?=[-\w./\"$])"
+        )
+        for text, label in ((readme, "README.md"), (skill, "SKILL.md")):
+            found = [
+                match.group(0)
+                for match in unqualified_python.finditer(text)
+            ]
+            self.assertEqual(
+                [], found, f"{label} invokes a bare python; use \"$PYTHON\""
+            )
 
     def test_slack_output_contract_matches_multisize_packager(self) -> None:
         readme = _read("README.md")
