@@ -21,12 +21,29 @@ class PublicDocumentationTests(unittest.TestCase):
         contributing = _read("CONTRIBUTING.md")
         metadata = _read("agents/openai.yaml")
 
-        for text in (readme, skill, contributing):
-            self.assertNotIn("~/.codex/skills", text)
-            self.assertNotIn("${CODEX_HOME:-$HOME/.codex}/skills", text)
+        # Codex loads skills from $CODEX_HOME/skills (default ~/.codex/skills).
+        # $HOME/.agents/skills is NOT scanned on its own, so every executable
+        # bootstrap block must point at the directory Codex actually reads.
+        # The .agents layout stays documented as an alternative, but only
+        # together with a symlink into $CODEX_HOME/skills.
+        canonical = '${CODEX_HOME:-$HOME/.codex}/skills/icon-forge'
+        self.assertIn(f'SKILL_DIR="{canonical}"', readme)
+        self.assertIn(f'SKILL_DIR="{canonical}"', skill)
 
-        self.assertIn('$HOME/.agents/skills/icon-forge', readme)
-        self.assertIn('$HOME/.agents/skills/icon-forge', skill)
+        agents_root = "$HOME/.agents/skills"
+        for text, label in ((readme, "README.md"), (skill, "SKILL.md")):
+            for match in re.finditer(
+                r'SKILL_DIR="([^"]*)"', text
+            ):
+                value = match.group(1)
+                if agents_root in value:
+                    self.assertIn(
+                        "ln -s",
+                        text,
+                        f"{label} sets SKILL_DIR to {value!r} without documenting "
+                        "the symlink into $CODEX_HOME/skills that makes it loadable",
+                    )
+
         self.assertIn('PYTHON="$SKILL_DIR/.venv/bin/python"', readme)
         self.assertIn('PYTHON="$SKILL_DIR/.venv/bin/python"', skill)
         self.assertIn("$icon-forge", readme)

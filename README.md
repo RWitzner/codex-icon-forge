@@ -5,7 +5,7 @@
 # icon-forge
 
 **AI-powered icon and sticker pack pipeline for [Codex][codex-link].**<br/>
-Install it under `~/.agents/skills/` for automatic skill discovery.<br/>
+Install it under `~/.codex/skills/` for automatic skill discovery.<br/>
 Slack sticker packs, app icon sets, favicons, and other icon-family<br/>
 products built end-to-end from a single concept.
 
@@ -105,15 +105,36 @@ You author new bundles as JSON profiles plus prompt templates. No engine code ch
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/install-dark.png"><img src="assets/sections/install.png" width="32" align="absmiddle"></picture> Install
 
 ```bash
-SKILL_DIR="$HOME/.agents/skills/icon-forge"
-mkdir -p "$HOME/.agents/skills"
+SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
+mkdir -p "$(dirname "$SKILL_DIR")"
 git clone https://github.com/RWitzner/codex-icon-forge.git "$SKILL_DIR"
 python3 -m venv "$SKILL_DIR/.venv"
 "$SKILL_DIR/.venv/bin/python" -m pip install --upgrade pip
 "$SKILL_DIR/.venv/bin/python" -m pip install -r "$SKILL_DIR/requirements.txt"
 ```
 
-Codex detects skills in `$HOME/.agents/skills` automatically. If it does not appear immediately, restart Codex. Then ask for a sticker pack, app icon set, or web brand kit:
+Codex loads skills from `$CODEX_HOME/skills` (default `~/.codex/skills`). If the skill does not appear immediately, restart Codex.
+
+<details>
+<summary>Sharing one checkout across several agents</summary>
+
+If you keep agent skills in `$HOME/.agents/skills` so that other tools can find them too, install there and symlink the checkout into the directory Codex actually scans:
+
+```bash
+SKILL_DIR="$HOME/.agents/skills/icon-forge"
+mkdir -p "$HOME/.agents/skills" "${CODEX_HOME:-$HOME/.codex}/skills"
+git clone https://github.com/RWitzner/codex-icon-forge.git "$SKILL_DIR"
+ln -s "$SKILL_DIR" "${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
+python3 -m venv "$SKILL_DIR/.venv"
+"$SKILL_DIR/.venv/bin/python" -m pip install --upgrade pip
+"$SKILL_DIR/.venv/bin/python" -m pip install -r "$SKILL_DIR/requirements.txt"
+```
+
+`$HOME/.agents/skills` on its own is not scanned by Codex; without the symlink the skill will not load.
+
+</details>
+
+Then ask for a sticker pack, app icon set, or web brand kit:
 
 - **ChatGPT desktop** - type `@` and select `icon-forge`.
 - **Codex CLI / IDE** - run `/skills` or type `$icon-forge` to select it explicitly.
@@ -238,7 +259,7 @@ flowchart LR
 <summary><kbd><strong>Full command sequence</strong></kbd></summary>
 
 ```bash
-SKILL_DIR="$HOME/.agents/skills/icon-forge"
+SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 PYTHON="$SKILL_DIR/.venv/bin/python"
 
 # 1. Prepare a run folder, prompts, and a job manifest. Pass one --variant
@@ -476,7 +497,7 @@ RGB inside the silhouette is never touched. RGB on chroma-killed and erode-clear
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/tests-dark.png"><img src="assets/sections/tests.png" width="32" align="absmiddle"></picture> Tests
 
 ```bash
-cd "$HOME/.agents/skills/icon-forge"
+cd "${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py' -t . -v
 ```

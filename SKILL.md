@@ -61,9 +61,11 @@ Add more bundles by authoring profile JSONs — no engine code changes required 
 ## Default workflow (concept to packaged output)
 
 ```bash
-SKILL_DIR="$HOME/.agents/skills/icon-forge"
+SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 PYTHON="$SKILL_DIR/.venv/bin/python"
 ```
+
+If `$PYTHON` does not exist, the skill was installed without its virtual environment — tell the user to run the install block in README.md rather than falling back to a system `python3`, which will not have Pillow.
 
 **Run location rule.** Omit `--output-dir` and the script picks `${PWD}/output/icon-forge/<entity-id>-<UTC-timestamp>` for you — i.e. the current working directory the user invoked you from. Only pass `--output-dir` when the user explicitly names a different path. Never default to `~/Downloads`, `~/Desktop`, `$CODEX_HOME`, or `/tmp`.
 
