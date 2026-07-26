@@ -499,7 +499,15 @@ def main() -> int:
     record = sub.add_parser("record", help="ingest a generated image as a job's decoded output")
     record.add_argument("--run-dir", required=True)
     record.add_argument("--job-id", required=True)
-    record.add_argument("--source", required=True)
+    record.add_argument(
+        "--source",
+        required=True,
+        help=(
+            "Absolute path $imagegen reported for the generated image, passed "
+            "verbatim. Must live under $CODEX_HOME/generated_images (default "
+            "~/.codex/generated_images) and be named ig_*.png."
+        ),
+    )
     record.add_argument(
         "--force",
         action="store_true",

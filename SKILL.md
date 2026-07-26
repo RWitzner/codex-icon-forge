@@ -106,7 +106,7 @@ If `$PYTHON` does not exist, the skill was installed without its virtual environ
    "$PYTHON" "$SKILL_DIR/scripts/icon_forge.py" record \
      --run-dir "$RUN_DIR" \
      --job-id <id> \
-     --source /absolute/path/to/$CODEX_HOME/generated_images/.../ig_*.png
+     --source "$CODEX_HOME/generated_images/<subdir>/ig_<id>.png"
    ```
 
    For base jobs (atlases that declare `requires_base: true`; none of the shipped bundles do, but external bundles may) this also writes `references/canonical-base.png` so subsequent row jobs use it as identity reference. The record step is concurrency-safe: a sibling lock file serialises parallel calls so no manifest update is dropped.
@@ -254,7 +254,7 @@ Before returning, visually check:
 - no forbidden artifacts described in the prompt
 
 Do not edit manifests, copy into decoded, record results, derive states, extract frames, or finalize. Return only:
-selected_source=/absolute/path/to/$CODEX_HOME/generated_images/.../ig_*.png
+selected_source=<the absolute path $imagegen reported, verbatim — it lives under $CODEX_HOME/generated_images/ and is named ig_*.png>
 qa_note=<one sentence>
 ```
 

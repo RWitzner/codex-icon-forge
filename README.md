@@ -508,7 +508,7 @@ cd "${CODEX_HOME:-$HOME/.codex}/skills/icon-forge"
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py' -t . -v
 ```
 
-Covers: profile loader, role-based prompt composition, composer, validator, two extractor strategies, multi-size, sticker-folder, and web-brand-kit packagers, end-to-end orchestration for all shipped bundles (`slack-stickers`, `app-icons`, `app-icon-set`, `web-brand-kit`), parallel-record concurrency safety, source-provenance enforcement, overwrite guard, dynamic-state variant validation, and chroma edge cleanup.
+Covers: profile loader, role-based prompt composition, composer, validator (every failure branch, and that `finalize` refuses to package an atlas which kept its background), two extractor strategies, multi-size, sticker-folder, and web-brand-kit packagers including the flattened store-compliant output, end-to-end orchestration for all shipped bundles (`slack-stickers`, `app-icons`, `app-icon-set`, `web-brand-kit`), parallel-record concurrency safety, source-provenance enforcement, overwrite guard and forced-re-record invalidation, entity-id and dynamic-state variant validation, external private profile-root discovery, chroma edge cleanup, and the public-documentation and no-private-content contracts.
 
 <div align="right">
 
