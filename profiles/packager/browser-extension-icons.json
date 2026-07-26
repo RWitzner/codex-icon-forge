@@ -1,0 +1,37 @@
+{
+  "id": "browser-extension-icons",
+  "description": "Chrome MV3 + Firefox AMO extension icon set: icons/icon<size>.png plus a paste-in manifest fragment. Uses explicit targets so the filenames follow the platform convention rather than this engine's default naming.",
+  "strategy": "multi-size-folder",
+  "output_root": "${ICON_FORGE_HOME:-$HOME/icon-forge}/browser-extensions/{entity_id}",
+  "params": {
+    "image_format": "PNG",
+    "targets": [
+      {"px": 16, "path": "icons/icon16.png"},
+      {"px": 32, "path": "icons/icon32.png"},
+      {"px": 48, "path": "icons/icon48.png"},
+      {"px": 96, "path": "icons/icon96.png"},
+      {"px": 128, "path": "icons/icon128.png"}
+    ],
+    "emit_files": [
+      {
+        "path": "manifest.icons.json",
+        "json": {
+          "icons": {
+            "16": "icons/icon16.png",
+            "32": "icons/icon32.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+          },
+          "action": {
+            "default_icon": {
+              "16": "icons/icon16.png",
+              "32": "icons/icon32.png"
+            }
+          }
+        }
+      }
+    ],
+    "readme_filename": "README.md",
+    "readme_template": "# {display_name} browser extension icons\n\n{description}\n\n## Files\n\n`icons/icon16.png`, `icons/icon32.png`, `icons/icon48.png`, `icons/icon96.png`, `icons/icon128.png`.\n\n## Installing\n\nCopy the `icons/` folder into your extension root, then **merge** the contents of `manifest.icons.json` into your existing `manifest.json`. Do not replace `manifest.json` with it - it contains only the icon keys.\n\n## What each size is for\n\n- 16 - favicon on the extension's own pages, and the toolbar button at 100% scaling.\n- 32 - Windows systems often need this one; also the toolbar button at 200% scaling.\n- 48 - the Extensions management page.\n- 96 - Firefox AMO listing.\n- 128 - installation and the Chrome Web Store listing.\n\nAll files are PNG with an alpha channel, which both stores accept for extension icons.\n"
+  }
+}

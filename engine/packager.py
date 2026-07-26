@@ -137,6 +137,26 @@ def resolve_output_root(profile: PackagerProfile, context: PackageContext) -> Pa
     return resolved
 
 
+def resolve_within(output_dir: Path, relative: str, *, what: str) -> Path:
+    """Join a profile-supplied relative path onto the output root, safely.
+
+    Packager profiles can be authored outside this repository, and their path
+    templates carry substituted values. Every emitted file has to land under
+    the resolved output root; `..`, an absolute path, or a symlinked parent
+    must not be able to write elsewhere.
+    """
+
+    candidate = Path(relative)
+    if candidate.is_absolute():
+        raise ValueError(f"{what} must be a relative path, got {relative!r}")
+    resolved = (output_dir / candidate).resolve()
+    if not _is_relative_to(resolved, output_dir.resolve()):
+        raise ValueError(
+            f"{what} {relative!r} escapes the packaged output root {output_dir}"
+        )
+    return resolved
+
+
 def render_schema(value: Any, context: PackageContext) -> Any:
     if isinstance(value, str):
         return _format_with_context(value, context)

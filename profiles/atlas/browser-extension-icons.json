@@ -1,0 +1,28 @@
+{
+  "id": "browser-extension-icons",
+  "description": "One extension mark rendered from a single 1024x1024 source cell, fanned out to the icon sizes Chrome MV3 and Firefox AMO ask for.",
+  "requires_base": false,
+  "geometry": {
+    "columns": 1,
+    "rows": 1,
+    "cell_width": 1024,
+    "cell_height": 1024
+  },
+  "states": [
+    {
+      "id": "icon",
+      "row": 0,
+      "frames": 1,
+      "durations_ms": [0],
+      "purpose": "the extension's toolbar and store icon",
+      "role": "launcher"
+    }
+  ],
+  "derivations": [],
+  "layout_guides": {
+    "enabled": false,
+    "safe_margin_x": 0,
+    "safe_margin_y": 0,
+    "guide_style": {}
+  }
+}

@@ -25,13 +25,26 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Every profile id this repository is allowed to ship, per axis.
 PUBLIC_PROFILES = {
-    "bundles": {"app-icon-set", "app-icons", "slack-stickers", "web-brand-kit"},
-    "atlas": {"app-icon-set", "app-icons", "slack-stickers", "web-brand-kit"},
+    "bundles": {
+        "app-icon-set",
+        "app-icons",
+        "browser-extension-icons",
+        "slack-stickers",
+        "web-brand-kit",
+    },
+    "atlas": {
+        "app-icon-set",
+        "app-icons",
+        "browser-extension-icons",
+        "slack-stickers",
+        "web-brand-kit",
+    },
     "style": {"clean-app-icon", "flat-vector", "launcher-tile"},
     "extractor": {"chroma-key-slots", "slot-only"},
     "packager": {
         "app-icon-set-multisize",
         "app-icons-multisize",
+        "browser-extension-icons",
         "sticker-folder",
         "web-brand-kit",
     },

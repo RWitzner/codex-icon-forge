@@ -1,0 +1,8 @@
+{
+  "id": "browser-extension-icons",
+  "description": "One browser-extension mark rendered at the Chrome MV3 and Firefox AMO icon sizes, with a paste-in manifest fragment.",
+  "atlas": "browser-extension-icons",
+  "style": "launcher-tile",
+  "extractor": "chroma-key-slots",
+  "packager": "browser-extension-icons"
+}
