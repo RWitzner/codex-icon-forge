@@ -17,6 +17,17 @@ from .profiles import AtlasProfile, ExtractorProfile
 
 _DEFAULT_MIN_USED_PIXELS = 50
 _DEFAULT_NEAR_OPAQUE_THRESHOLD = 0.95
+# Must match the padding ``extractors._helpers.fit_to_cell`` reserves on each
+# axis. A frame that went through extraction can never fill more than the
+# resulting area, so the near-opaque test has to be measured against *that*,
+# not against the raw cell area — otherwise the threshold is unreachable and
+# the check silently never fires.
+_DEFAULT_CELL_PADDING_PX = 10
+# The whole-atlas transparency check is deliberately independent of
+# ``near_opaque_threshold``: that one is scoped to a single padded cell, and a
+# profile raising it to disable the per-cell check must not also switch off the
+# "this atlas has no transparency at all" backstop.
+_FULLY_OPAQUE_RATIO = 0.999
 
 
 @dataclass
@@ -66,6 +77,13 @@ def validate_atlas(
     near_opaque = float(
         extractor_profile.params.get("near_opaque_threshold", _DEFAULT_NEAR_OPAQUE_THRESHOLD)
     )
+    cell_padding = int(
+        extractor_profile.params.get("cell_padding_px", _DEFAULT_CELL_PADDING_PX)
+    )
+    attainable_cell_pixels = max(
+        1, (geo.cell_width - cell_padding) * (geo.cell_height - cell_padding)
+    )
+    near_opaque_limit = attainable_cell_pixels * near_opaque
 
     try:
         with Image.open(atlas_path) as opened:
@@ -129,7 +147,7 @@ def validate_atlas(
                     f"{state_id} row {row_index} column {column_index} "
                     f"is empty or too sparse ({nontransparent} pixels)"
                 )
-            if used and nontransparent > geo.cell_width * geo.cell_height * near_opaque:
+            if used and nontransparent > near_opaque_limit:
                 near_opaque_used[f"{state_id} row {row_index}"].append(column_index)
             if not used and nontransparent != 0:
                 result.errors.append(
@@ -139,15 +157,17 @@ def validate_atlas(
 
     for row_label, columns in near_opaque_used.items():
         message = (
-            f"{row_label} has {len(columns)} nearly opaque used cells; "
-            "this usually means the sprite has a non-transparent background"
+            f"{row_label} has {len(columns)} nearly opaque used cells "
+            f"(>{near_opaque:.0%} of the {attainable_cell_pixels}px a cell can "
+            "hold after extraction padding); this usually means the sprite has "
+            "a non-transparent background"
         )
         if allow_near_opaque_used_cells:
             result.warnings.append(message)
         else:
             result.errors.append(message)
 
-    if _alpha_nonzero_count(image) == geo.width * geo.height:
+    if _alpha_nonzero_count(image) >= geo.width * geo.height * _FULLY_OPAQUE_RATIO:
         message = "atlas is fully opaque; transparent icon/sticker outputs require an alpha background"
         if allow_opaque:
             result.warnings.append(message)

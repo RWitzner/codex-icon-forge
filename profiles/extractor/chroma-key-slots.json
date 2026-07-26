@@ -5,7 +5,8 @@
   "params": {
     "key_threshold": 96.0,
     "min_used_pixels": 50,
-    "near_opaque_threshold": 1.01,
+    "near_opaque_threshold": 0.98,
+    "cell_padding_px": 10,
     "alpha_erode_px": 1,
     "alpha_blur_radius": 1.0
   }
