@@ -78,16 +78,50 @@ def remove_chroma_background(
     return Image.merge("RGBA", (red_band, green_band, blue_band, alpha_band))
 
 
-def fit_to_cell(image: Image.Image, cell_width: int, cell_height: int) -> Image.Image:
+DEFAULT_CELL_PADDING_PX = 10
+
+
+def fit_to_cell(
+    image: Image.Image,
+    cell_width: int,
+    cell_height: int,
+    *,
+    padding_px: int = DEFAULT_CELL_PADDING_PX,
+    allow_upscale: bool = False,
+) -> Image.Image:
+    """Crop to the visible bounding box, scale into the cell, and centre it.
+
+    ``padding_px`` is the total space reserved across each axis, so the sprite
+    can occupy at most ``(cell - padding_px)`` pixels in each direction. It is
+    a parameter rather than a constant because ``validator.validate_atlas``
+    has to compute the same attainable area to decide whether a cell kept its
+    background — the two read it from the same extractor profile key
+    (``cell_padding_px``), and they must not drift apart.
+
+    Callers that need the same design at several sizes should fit ONCE at the
+    largest size and downscale the result. Fitting per size applies a constant
+    pixel padding to different cell sizes, which makes the small file not a
+    downscale of the large one.
+
+    ``allow_upscale`` controls whether a sprite smaller than the cell is
+    enlarged to fill it. Extraction leaves it off: an atlas cell should show
+    the art at its generated resolution. Pack normalisation turns it on,
+    because otherwise a design whose silhouette happens to be smaller ships at
+    a different visual weight than its packmates — measured at 0.87 against
+    0.98 of the cell in the same run.
+    """
+
     bbox = image.getbbox()
     target = Image.new("RGBA", (cell_width, cell_height), (0, 0, 0, 0))
     if bbox is None:
         return target
 
     sprite = image.crop(bbox)
-    max_width = cell_width - 10
-    max_height = cell_height - 10
-    scale = min(max_width / sprite.width, max_height / sprite.height, 1.0)
+    max_width = max(1, cell_width - padding_px)
+    max_height = max(1, cell_height - padding_px)
+    scale = min(max_width / sprite.width, max_height / sprite.height)
+    if not allow_upscale:
+        scale = min(scale, 1.0)
     if scale != 1.0:
         sprite = sprite.resize(
             (max(1, round(sprite.width * scale)), max(1, round(sprite.height * scale))),

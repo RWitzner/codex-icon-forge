@@ -24,7 +24,11 @@ from typing import Any
 
 from PIL import Image
 
-from ..extractors._helpers import fit_to_cell, remove_chroma_background
+from ..extractors._helpers import (
+    DEFAULT_CELL_PADDING_PX,
+    fit_to_cell,
+    remove_chroma_background,
+)
 from ..packager import PackageContext, register, resolve_output_root
 from ..profiles import AtlasProfile, PackagerProfile
 from ..request_manifest import read_request
@@ -169,6 +173,9 @@ def _atlas_extract_folder(
         alpha_blur_radius = float(
             profile.params.get("alpha_blur_radius", _DEFAULT_ALPHA_BLUR_RADIUS)
         )
+        cell_padding_px = int(
+            profile.params.get("cell_padding_px", DEFAULT_CELL_PADDING_PX)
+        )
 
         written: list[str] = []
         target_iter = iter(targets)
@@ -185,10 +192,27 @@ def _atlas_extract_folder(
                 alpha_erode_px=alpha_erode_px,
                 alpha_blur_radius=alpha_blur_radius,
             )
+            # Normalise ONCE at the largest requested size, then downscale.
+            # Fitting per size applied a constant pixel padding to different
+            # cells, so the 128px sticker was not a downscale of the 1024px
+            # one (measured fill: 0.922 vs 0.990 of the cell). Every file in a
+            # sticker's folder is now the same framing at a different scale.
+            master_size = max(sizes)
+            master = fit_to_cell(
+                cleaned,
+                master_size,
+                master_size,
+                padding_px=cell_padding_px,
+                allow_upscale=True,
+            )
             for size in sizes:
                 target = next(target_iter)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                resized = fit_to_cell(cleaned, size, size)
+                resized = (
+                    master
+                    if size == master_size
+                    else master.resize((size, size), Image.Resampling.LANCZOS)
+                )
                 if image_format == "WEBP":
                     resized.save(target, format="WEBP", lossless=True, quality=100, method=6)
                 else:

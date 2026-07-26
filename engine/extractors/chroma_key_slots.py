@@ -16,7 +16,7 @@ from PIL import Image
 
 from ..extractor import register
 from ..profiles import AtlasProfile, ExtractorProfile, StateSpec
-from ._helpers import fit_to_cell, remove_chroma_background
+from ._helpers import DEFAULT_CELL_PADDING_PX, fit_to_cell, remove_chroma_background
 
 _DEFAULT_KEY_THRESHOLD = 96.0
 _DEFAULT_ALPHA_ERODE_PX = 1
@@ -39,6 +39,11 @@ def extract(
     alpha_blur_radius = float(
         extractor.params.get("alpha_blur_radius", _DEFAULT_ALPHA_BLUR_RADIUS)
     )
+    # Same key validator.validate_atlas reads to compute the attainable cell
+    # area; if these two disagree the near-opaque check stops being meaningful.
+    cell_padding_px = int(
+        extractor.params.get("cell_padding_px", DEFAULT_CELL_PADDING_PX)
+    )
     cell_width = atlas.geometry.cell_width
     cell_height = atlas.geometry.cell_height
 
@@ -55,5 +60,7 @@ def extract(
         left = round(index * slot_width)
         right = round((index + 1) * slot_width)
         crop = cleaned.crop((left, 0, right, cleaned.height))
-        frames.append(fit_to_cell(crop, cell_width, cell_height))
+        frames.append(
+            fit_to_cell(crop, cell_width, cell_height, padding_px=cell_padding_px)
+        )
     return frames, "chroma-key-slots"

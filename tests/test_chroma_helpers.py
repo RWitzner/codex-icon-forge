@@ -16,7 +16,10 @@ from PIL import Image
 SKILL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_DIR))
 
-from engine.extractors._helpers import remove_chroma_background  # noqa: E402
+from engine.extractors._helpers import (  # noqa: E402
+    fit_to_cell,
+    remove_chroma_background,
+)
 
 MAGENTA = (255, 0, 255)
 
@@ -128,6 +131,93 @@ class ChromaEdgeCleanupTests(unittest.TestCase):
             0,
             "Gaussian blur on alpha should produce intermediate values",
         )
+
+
+class FitToCellTests(unittest.TestCase):
+    """Framing has to be a property of the design, not of the output size."""
+
+    @staticmethod
+    def _sprite(width: int, height: int, canvas: int = 1200) -> Image.Image:
+        image = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
+        left = (canvas - width) // 2
+        top = (canvas - height) // 2
+        block = Image.new("RGBA", (width, height), (20, 160, 90, 255))
+        image.alpha_composite(block, (left, top))
+        return image
+
+    @staticmethod
+    def _largest_axis_fill(image: Image.Image, cell: int) -> float:
+        alpha = image.getchannel("A").point(lambda v: 255 if v > 128 else 0)
+        bbox = alpha.getbbox()
+        assert bbox is not None
+        return max((bbox[2] - bbox[0]) / cell, (bbox[3] - bbox[1]) / cell)
+
+    def test_padding_is_a_parameter_the_validator_can_agree_with(self) -> None:
+        sprite = self._sprite(1100, 1100)
+        for padding in (10, 40):
+            fitted = fit_to_cell(sprite, 512, 512, padding_px=padding)
+            alpha = fitted.getchannel("A").point(lambda v: 255 if v > 128 else 0)
+            bbox = alpha.getbbox()
+            assert bbox is not None
+            self.assertLessEqual(bbox[2] - bbox[0], 512 - padding + 1)
+
+    def test_fitting_once_then_downscaling_keeps_framing_constant(self) -> None:
+        """Fitting per size applies a constant pixel pad to different cells."""
+
+        sprite = self._sprite(1100, 900)
+        sizes = [128, 256, 512, 1024]
+
+        per_size = [
+            self._largest_axis_fill(fit_to_cell(sprite, size, size), size)
+            for size in sizes
+        ]
+        self.assertGreater(
+            max(per_size) - min(per_size),
+            0.03,
+            "fixture no longer reproduces the per-size framing drift",
+        )
+
+        master = fit_to_cell(sprite, 1024, 1024)
+        downscaled = [
+            self._largest_axis_fill(
+                master if size == 1024 else master.resize(
+                    (size, size), Image.Resampling.LANCZOS
+                ),
+                size,
+            )
+            for size in sizes
+        ]
+        self.assertLess(max(downscaled) - min(downscaled), 0.02)
+
+    def test_allow_upscale_normalises_a_small_design_to_its_packmates(self) -> None:
+        big = self._sprite(1000, 1000)
+        small = self._sprite(700, 700)
+
+        clamped = [
+            self._largest_axis_fill(fit_to_cell(s, 1024, 1024), 1024)
+            for s in (big, small)
+        ]
+        self.assertGreater(
+            clamped[0] - clamped[1],
+            0.1,
+            "fixture no longer reproduces the unnormalised-sibling case",
+        )
+
+        normalised = [
+            self._largest_axis_fill(
+                fit_to_cell(s, 1024, 1024, allow_upscale=True), 1024
+            )
+            for s in (big, small)
+        ]
+        self.assertLess(abs(normalised[0] - normalised[1]), 0.02)
+
+    def test_extraction_still_refuses_to_upscale_by_default(self) -> None:
+        small = self._sprite(400, 400)
+        fitted = fit_to_cell(small, 1024, 1024)
+        alpha = fitted.getchannel("A").point(lambda v: 255 if v > 128 else 0)
+        bbox = alpha.getbbox()
+        assert bbox is not None
+        self.assertEqual(bbox[2] - bbox[0], 400)
 
 
 if __name__ == "__main__":
