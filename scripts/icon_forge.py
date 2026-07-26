@@ -296,8 +296,9 @@ def _resume(args: argparse.Namespace) -> int:
 def _review(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
     try:
-        bundle = load_bundle_for_run(run_dir, root=_run_profile_roots(args))
-        result = review_outputs(bundle, run_dir, force=args.force)
+        roots = _run_profile_roots(args)
+        bundle = load_bundle_for_run(run_dir, root=roots)
+        result = review_outputs(bundle, run_dir, force=args.force, root=roots)
     except Exception as exc:
         print(
             json.dumps(

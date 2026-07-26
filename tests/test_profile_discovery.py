@@ -24,6 +24,7 @@ from engine import (  # noqa: E402
     resolve_profile_roots,
 )
 from engine.profiles import ProfileError  # noqa: E402
+from engine.review import review_outputs  # noqa: E402
 from engine.run_setup import (  # noqa: E402
     PrepareOptions,
     approve_results,
@@ -629,6 +630,67 @@ class ProfileCliAndRunContinuityTests(unittest.TestCase):
             )
             self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
             self.assertTrue((icon_home / "app-icons" / "solar" / "solar-1024.png").is_file())
+
+
+class ReviewHonoursProfileDirOverrideTests(unittest.TestCase):
+    """`review --profile-dir` used to be discarded before reaching the loader.
+
+    Every other run-dir command (`extract`, `derive`, `finalize`) threads the
+    caller's root chain through. `review` loaded the bundle with the override
+    and then reloaded it without, so a run whose private profile root had moved
+    could be extracted but not reviewed.
+    """
+
+    def test_review_loads_the_bundle_from_the_relocated_profile_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original_profiles = root / "profiles-v1"
+            _write_bundle(original_profiles, "private-icons", atlas="private-atlas")
+            _write_atlas(original_profiles, "private-atlas")
+
+            run_dir = root / "run"
+            bundle = load_bundle("private-icons", root=[original_profiles, PROFILES_ROOT])
+            prepare_run(
+                PrepareOptions(
+                    bundle=bundle,
+                    entity_id="private",
+                    display_name="Private",
+                    description="profile-dir override test",
+                    entity_notes="a simple mark",
+                    style_notes="",
+                    references=[],
+                    output_dir=run_dir,
+                    chroma_key="#FF00FF",
+                    force=True,
+                    profile_roots=[original_profiles],
+                )
+            )
+
+            source = root / "icon.png"
+            image = Image.new("RGBA", (32, 32), (255, 0, 255, 255))
+            ImageDraw.Draw(image).ellipse((6, 6, 25, 25), fill=(20, 90, 200, 255))
+            image.save(source)
+            record_result(
+                run_dir, "icon", source, allow_synthetic_test_source=True
+            )
+
+            # The user reorganises their private profiles after preparing.
+            relocated = root / "profiles-v2"
+            original_profiles.rename(relocated)
+
+            # The persisted root no longer exists, so review must use the
+            # override the caller supplied — exactly as extract does.
+            with self.assertRaises(ProfileError):
+                review_outputs(bundle, run_dir, force=True)
+
+            result = review_outputs(
+                bundle,
+                run_dir,
+                force=True,
+                root=[relocated, PROFILES_ROOT],
+            )
+            self.assertEqual(result["bundle"], "private-icons")
+            self.assertTrue((run_dir / "qa" / "review.json").is_file())
 
 
 if __name__ == "__main__":

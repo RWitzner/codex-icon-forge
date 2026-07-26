@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 from .chroma import parse_hex_color
 from .extractors._helpers import remove_chroma_background
 from .manifest import Job, load_manifest, now_iso
-from .profiles import Bundle, StateSpec, load_bundle_for_run
+from .profiles import Bundle, RootInput, StateSpec, load_bundle_for_run
 from .request_manifest import read_request
 
 REVIEW_SCHEMA_VERSION = 1
@@ -379,18 +379,24 @@ def _render_sheet(
     return sheet, layout
 
 
-def _resolve_bundle(bundle: Bundle, run_dir: Path) -> Bundle:
-    try:
-        return load_bundle_for_run(run_dir)
-    except FileNotFoundError:
-        return bundle
+def review_outputs(
+    bundle: Bundle,
+    run_dir: Path,
+    force: bool = False,
+    *,
+    root: RootInput | None = None,
+) -> dict[str, Any]:
+    """Validate decoded outputs and render review artifacts for a run.
 
-
-def review_outputs(bundle: Bundle, run_dir: Path, force: bool = False) -> dict[str, Any]:
-    """Validate decoded outputs and render review artifacts for a run."""
+    ``root`` mirrors ``extract``/``derive``/``finalize``: when the caller passed
+    ``--profile-dir`` it must reach the loader, otherwise a run whose private
+    profile root has moved can be extracted but not reviewed. The run's own
+    persisted bundle still wins over whatever bundle the caller handed in — only
+    the root search chain is taken from the caller.
+    """
 
     run_dir = run_dir.expanduser().resolve()
-    bundle = _resolve_bundle(bundle, run_dir)
+    bundle = load_bundle_for_run(run_dir, root=root)
     # Explicitly read request.json so review uses the same persisted run
     # contract as extract/finalize and fails early for incomplete run folders.
     request = read_request(run_dir)
