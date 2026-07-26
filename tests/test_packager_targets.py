@@ -201,6 +201,96 @@ class TargetsAndEmitFilesTests(unittest.TestCase):
                     force=True,
                 )
 
+    def test_emit_files_will_not_clobber_without_force(self) -> None:
+        """The data-loss case: manifest.icons.json is merged into by hand."""
+
+        self._write_atlas_image()
+        self.out.mkdir(parents=True)
+        hand_edited = '{"USER_HAND_EDITED": true}\n'
+        (self.out / "manifest.icons.json").write_text(hand_edited)
+
+        with self.assertRaises(FileExistsError):
+            package(
+                self._profile(
+                    targets=[{"px": 16, "path": "icons/icon16.png"}],
+                    emit_files=[{"path": "manifest.icons.json", "json": {"a": 1}}],
+                ),
+                self._context(),
+                atlas=_atlas(),
+                force=False,
+            )
+        self.assertEqual(
+            (self.out / "manifest.icons.json").read_text(), hand_edited
+        )
+
+    def test_two_outputs_mapping_to_one_path_is_refused(self) -> None:
+        self._write_atlas_image()
+        with self.assertRaises(ValueError) as caught:
+            package(
+                self._profile(
+                    targets=[{"px": 16, "path": "same.png"}],
+                    emit_files=[{"path": "same.png", "json": {}}],
+                ),
+                self._context(),
+                atlas=_atlas(),
+                force=True,
+            )
+        self.assertIn("same path", str(caught.exception))
+
+    def test_template_error_names_the_field_and_the_placeholders(self) -> None:
+        """A bare KeyError from inside a packager tells an author nothing."""
+
+        self._write_atlas_image()
+        with self.assertRaises(ValueError) as caught:
+            package(
+                self._profile(
+                    targets=[{"px": 16, "path": "icons/icon16.png"}],
+                    emit_files=[{"path": "x.json", "template": "body { margin: 0 }"}],
+                ),
+                self._context(),
+                atlas=_atlas(),
+                force=True,
+            )
+        message = str(caught.exception)
+        self.assertIn("emit_files[0].template", message)
+        self.assertIn("Available placeholders", message)
+        self.assertIn("doubled", message)
+
+    def test_a_failing_entry_leaves_no_partial_output(self) -> None:
+        self._write_atlas_image()
+        with self.assertRaises(ValueError):
+            package(
+                self._profile(
+                    targets=[{"px": 16, "path": "icons/icon16.png"}],
+                    emit_files=[
+                        {"path": "good.json", "json": {"ok": 1}},
+                        {"path": "bad.json", "template": "{nope}"},
+                    ],
+                ),
+                self._context(),
+                atlas=_atlas(),
+                force=True,
+            )
+        self.assertFalse((self.out / "good.json").exists())
+        self.assertFalse((self.out / "icons" / "icon16.png").exists())
+
+    def test_readme_file_count_includes_emitted_files(self) -> None:
+        self._write_atlas_image()
+        result = package(
+            self._profile(
+                targets=[{"px": 16, "path": "icons/icon16.png"}],
+                emit_files=[{"path": "manifest.icons.json", "json": {"a": 1}}],
+                readme_filename="README.md",
+                readme_template="files: {file_count}\n",
+            ),
+            self._context(),
+            atlas=_atlas(),
+            force=True,
+        )
+        on_disk = sum(1 for path in self.out.rglob("*") if path.is_file())
+        self.assertEqual((self.out / "README.md").read_text().strip(), f"files: {on_disk}")
+        self.assertEqual(result["file_count"], on_disk)
+
     def test_sizes_and_naming_still_work_unchanged(self) -> None:
         self._write_atlas_image(rows=2)
         result = package(

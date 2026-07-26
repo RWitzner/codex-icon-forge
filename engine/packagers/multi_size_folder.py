@@ -88,14 +88,40 @@ def _explicit_targets(profile: PackagerProfile) -> list[tuple[int, str]] | None:
     return pairs
 
 
+def _format_or_explain(
+    template: str, values: dict[str, Any], *, where: str
+) -> str:
+    """``str.format`` with an error that says which profile field is at fault.
+
+    Bare ``KeyError: ' margin'`` from deep inside a packager tells an author
+    nothing. Literal braces in a template are the common cause and the message
+    has to name that, because the fix (double them, or use `json`) is not
+    guessable from the exception.
+    """
+
+    try:
+        return template.format(**values)
+    except (KeyError, IndexError, ValueError) as exc:
+        raise ValueError(
+            f"{where}: cannot render template ({type(exc).__name__}: {exc}). "
+            f"Available placeholders: {', '.join(sorted(values))}. "
+            "Literal braces must be doubled ({{ }}); for JSON output use the "
+            "'json' field instead of 'template'."
+        ) from exc
+
+
 def _emit_files(
     profile: PackagerProfile,
     context: PackageContext,
     output_dir: Path,
     *,
     extra_format_values: dict[str, Any],
-) -> list[Path]:
-    """Write the profile's ``emit_files`` entries and return their paths.
+) -> list[tuple[Path, str]]:
+    """Plan the profile's ``emit_files`` entries; writes nothing.
+
+    Rendering is separated from writing so a failure on entry 3 cannot leave
+    entries 1 and 2 on disk, and so the paths are known before the overwrite
+    guard runs.
 
     Each entry is ``{path, json}`` or ``{path, template}``. JSON goes through
     ``render_schema``, never ``str.format`` — a literal ``{"icons": ...}`` in a
@@ -111,7 +137,7 @@ def _emit_files(
             f"packager profile {profile.id!r}: 'emit_files' must be a list"
         )
 
-    written: list[Path] = []
+    planned: list[tuple[Path, str]] = []
     for index, entry in enumerate(raw):
         where = f"packager profile {profile.id!r}: emit_files[{index}]"
         if not isinstance(entry, dict) or "path" not in entry:
@@ -123,21 +149,21 @@ def _emit_files(
 
         target = resolve_within(
             output_dir,
-            str(entry["path"]).format(entity_id=context.entity_id),
+            _format_or_explain(
+                str(entry["path"]), extra_format_values, where=f"{where}.path"
+            ),
             what="emit_files path",
         )
-        target.parent.mkdir(parents=True, exist_ok=True)
         if has_json:
-            payload = render_schema(entry["json"], context)
-            target.write_text(
-                json.dumps(payload, indent=2) + "\n", encoding="utf-8"
-            )
+            content = json.dumps(render_schema(entry["json"], context), indent=2) + "\n"
         else:
-            target.write_text(
-                str(entry["template"]).format(**extra_format_values), encoding="utf-8"
+            content = _format_or_explain(
+                str(entry["template"]),
+                extra_format_values,
+                where=f"{where}.template",
             )
-        written.append(target)
-    return written
+        planned.append((target, content))
+    return planned
 
 
 def _default_flatten_naming(naming: str) -> str:
@@ -319,16 +345,57 @@ def _multi_size_folder(
     targets = [path for _state, _px, path in plan]
     flatten_targets = [path for _state, _px, path in flatten_plan]
 
+    # Everything the run will write, resolved and rendered before a single
+    # byte lands, so the overwrite guard sees the whole set and a failure
+    # halfway through rendering leaves the directory untouched.
+    total_files = (
+        len(targets)
+        + len(flatten_targets)
+        + (1 if readme_path is not None else 0)
+        + len(profile.params.get("emit_files") or [])
+    )
+    emit_plan = _emit_files(
+        profile,
+        context,
+        output_dir,
+        extra_format_values={
+            "entity_id": context.entity_id,
+            "bundle_id": context.entity_id,
+            "display_name": context.display_name,
+            "description": context.description,
+            "size_list": ", ".join(f"{size}x{size}" for size in sizes),
+            "state_list": "\n".join(
+                f"- `{state.id}`: {state.purpose}" for state in atlas.states
+            ),
+            "state_count": len(atlas.states),
+            "file_count": total_files,
+        },
+    )
+    emit_paths = [path for path, _content in emit_plan]
+
+    all_paths = [
+        *targets,
+        *flatten_targets,
+        *([readme_path] if readme_path is not None else []),
+        *emit_paths,
+    ]
+    seen: dict[Path, int] = {}
+    for path in all_paths:
+        seen[path] = seen.get(path, 0) + 1
+    collisions = sorted(str(path) for path, count in seen.items() if count > 1)
+    if collisions:
+        raise ValueError(
+            f"packager profile {profile.id!r} maps several outputs to the same "
+            f"path: {', '.join(collisions)}. Add {{state}} or {{size}} to the "
+            "template so each output gets its own file."
+        )
+
     if not force:
-        existing = [t for t in (*targets, *flatten_targets) if t.exists()]
+        existing = [path for path in all_paths if path.exists()]
         if existing:
             raise FileExistsError(
-                f"{output_dir} already contains {len(existing)} packaged files; "
-                "pass force=True to overwrite"
-            )
-        if readme_path is not None and readme_path.exists():
-            raise FileExistsError(
-                f"{readme_path} already exists; pass force=True to overwrite"
+                f"{output_dir} already contains {len(existing)} packaged files "
+                f"(e.g. {existing[0]}); pass force=True to overwrite"
             )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -375,30 +442,18 @@ def _multi_size_folder(
             context=context,
             atlas=atlas,
             sizes=sizes,
-            # The README counts itself: it is written immediately below, so the
-            # number it quotes must match what the directory ends up holding.
-            file_count=len(written) + 1,
+            # Counted up front over the whole plan, so the README agrees with
+            # what the directory ends up holding — including itself and any
+            # emit_files entries, neither of which existed in `written` yet.
+            file_count=total_files,
         )
         readme_path.parent.mkdir(parents=True, exist_ok=True)
         readme_path.write_text(readme_text, encoding="utf-8")
         written.append(str(readme_path))
 
-    for emitted in _emit_files(
-        profile,
-        context,
-        output_dir,
-        extra_format_values={
-            "entity_id": context.entity_id,
-            "display_name": context.display_name,
-            "description": context.description,
-            "size_list": ", ".join(f"{size}x{size}" for size in sizes),
-            "state_list": "\n".join(
-                f"- `{state.id}`: {state.purpose}" for state in atlas.states
-            ),
-            "state_count": len(atlas.states),
-            "file_count": len(written),
-        },
-    ):
+    for emitted, content in emit_plan:
+        emitted.parent.mkdir(parents=True, exist_ok=True)
+        emitted.write_text(content, encoding="utf-8")
         written.append(str(emitted))
 
     return {
