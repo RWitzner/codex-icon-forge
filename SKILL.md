@@ -1,6 +1,6 @@
 ---
 name: icon-forge
-description: Use when a user wants a consistent static icon family, Slack or Discord sticker pack, app launcher icon set, favicon set, or browser/PWA brand kit generated and packaged from one visual concept.
+description: Use when a user wants a consistent static icon family, Slack or Discord sticker pack, app launcher icon set, favicon set, browser extension icon set, or browser/PWA brand kit generated and packaged from one visual concept.
 ---
 
 # Icon Forge
@@ -21,6 +21,7 @@ AI-powered icon and sticker pack pipeline. Same generation engine, multiple entr
 - **`app-icons`** — one icon design rendered at 8 platform sizes (16, 32, 64, 128, 180, 256, 512, 1024). Output: 8 sized PNGs plus a README mapping each size to its platform use (iOS App Store, Android Play Store, web favicon, apple-touch-icon, Slack workspace icon). Style is `launcher-tile` (full-colour app launcher tile, hardened against feature-glyph leakage, readable from 16x16).
 - **`app-icon-set`** — user-defined family of 1–12 distinct icon designs (e.g. main + share-extension + watch + notification), each rendered at all 8 platform sizes. Variants are supplied at prepare time via `--variant id:purpose` or, for style-defined semantic roles, `--variant id@role:purpose`; each variant is generated independently by its own subagent, then fan'ed out to subfolders. Output: `<entity>/<variant>/<variant>-<size>.png` plus a family README.
 - **`web-brand-kit`** — one browser/PWA brand mark rendered from a 1024x1024 source cell. Output: PNG favicons, `favicon.ico` with 16/32/48 entries, `apple-touch-icon.png`, 192/512 manifest icons, `site.webmanifest`, and a README with HTML usage.
+- **`browser-extension-icons`** — one extension mark rendered at the sizes Chrome MV3 and Firefox AMO ask for (16, 32, 48, 96, 128), written to `icons/icon<size>.png` using the platform's own filenames rather than this engine's default naming. Also emits `manifest.icons.json`, a fragment the user **merges** into their existing `manifest.json` — never a replacement for it. Style is `launcher-tile`.
 
 Add more bundles by authoring profile JSONs — no engine code changes required for typical new products.
 
@@ -32,6 +33,7 @@ Add more bundles by authoring profile JSONs — no engine code changes required 
 | Single app icon at all platform sizes | `app-icons` bundle |
 | Family of distinct app icons (main + alternates, share-ext, watch, notification, light/dark) each at all sizes | `app-icon-set` bundle with `--variant id:purpose` per design, or `id@role:purpose` for style-defined roles |
 | Browser/PWA favicon and manifest asset kit | `web-brand-kit` bundle |
+| Icons for a Chrome/Firefox/Edge browser extension | `browser-extension-icons` bundle |
 | New icon-family product (favicon pack, social avatar set, logo variations) | Author a new bundle with the existing engine |
 | Animated sprite sheets or game character atlases | Use a separate sprite/animation-focused skill; icon-forge is for static icon and sticker products |
 

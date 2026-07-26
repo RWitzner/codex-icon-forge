@@ -25,7 +25,7 @@ products built end-to-end from a single concept.
 
 ## <picture><source media="(prefers-color-scheme: dark)" srcset="assets/sections/what-it-makes-dark.png"><img src="assets/sections/what-it-makes.png" width="32" align="absmiddle"></picture> What it makes
 
-Each "bundle" is a complete icon product. Same engine, four output shapes.
+Each "bundle" is a complete icon product. Same engine, five output shapes.
 
 <table>
 <tr>
@@ -81,6 +81,23 @@ Each "bundle" is a complete icon product. Same engine, four output shapes.
     PNGs + ICO + manifest + README
     <br/><br/>
     <sub><strong>Favicons and PWA assets</strong><br/>One mark, every browser target.</sub>
+  </td>
+</tr>
+<tr>
+  <th align="center" width="50%" colspan="2">
+    <a href="profiles/bundles/browser-extension-icons.json">
+      <img src="examples/app-icon-set/monoline-suite/search/search-128.png" width="64" alt="browser-extension-icons">
+    </a>
+    <br/><br/><code>browser-extension-icons</code>
+  </th>
+</tr>
+<tr>
+  <td valign="top" align="center" colspan="2">
+    One mark &rarr; <strong>Chrome MV3 + Firefox AMO sizes</strong><br/>
+    (16, 32, 48, 96, 128) at the platform's own filenames<br/>
+    + a paste-in <code>manifest.icons.json</code> + README
+    <br/><br/>
+    <sub><strong>Browser extension icons</strong><br/>Ships as profile JSON only - no engine code.</sub>
   </td>
 </tr>
 </table>
